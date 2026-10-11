@@ -7,6 +7,20 @@ The feature set and effect catalogue are modelled one-to-one on [effect.app](htt
 the same 73 effects in the same categories (Blur, Color, Distort, Effects, Generate, Custom, Film),
 with the same parameters, ranges and defaults. All shaders here are original implementations.
 
+## Effects (73)
+
+- **Blur** (8): Depth of field, Circular blur, Gaussian blur, Motion blur, Radial blur, Blur/sharp, Zoom blur, Camera shake
+- **Color** (16): Color grading, Thermal, Curves, Color balance, Gradient map, Color temperature, Dither, Hue curves, Duotone, Hue/saturation, Levels, Exposure, Monochrome, Color matrix, RGB Gain, Contrast
+- **Distort** (12): Elastic grid, Grid split, Reeded glass, Cubify, Glitch, Perspective, Pinch, Polar to rectangular, Rectangular to polar, Ripple, Transform, Swirl
+- **Effects** (21): JPEG glitch, Scatter, Risograph, VHS, ASCII, MacPaint, Halftone screen, Emboss, Bevel, Bloom, Star glow, Motion trails, LED screen, NTSC, RGB Shift, CRT screen, Modulation, Threshold, Vignette, Stripe, Frame drop
+- **Generate** (6): Text, Noise, Ink bleed, Paper scan, Blob Tracker, Paper cutout
+- **Custom** (3): Layer Mix, Texture Blur, Displacement
+- **Film** (7): Classic Film, Vintage Film, Black & White, Infrared Film, Instant Film, Film Grain, Halation
+
+Parameters, ranges and defaults follow effect.app; defaults were checked side by side against its
+renders of the same photo. Film stocks are parametric emulations (no LUT files). Temporal effects
+built for video (motion trails, frame drop, blob persistence) render their single-frame look on stills.
+
 ## Quick start
 
 ```bash

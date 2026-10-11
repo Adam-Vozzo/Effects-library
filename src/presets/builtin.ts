@@ -53,7 +53,7 @@ export const BUILTIN_PRESETS: Preset[] = [
   {
     id: 'b-terminal',
     name: 'Green terminal',
-    layers: [{ effectId: 'ascii', params: { charColor: '#39ff7a', bgColor: '#020a04', density: 90 } }],
+    layers: [{ effectId: 'ascii', params: { charColor: '#39ff7a', bgColor: '#020a04', density: 70, contrast: 1.6 } }],
   },
   {
     id: 'b-kaleido',
@@ -66,7 +66,7 @@ export const BUILTIN_PRESETS: Preset[] = [
   {
     id: 'b-crushed-jpeg',
     name: 'Crushed JPEG',
-    layers: [{ effectId: 'jpeg-glitch', params: { compression: 12, blockSize: 3, corruption: 18, seed: 7 } }],
+    layers: [{ effectId: 'jpeg-glitch', params: { compression: 10, blockSize: 1, corruption: 12, seed: 7 } }],
   },
   {
     id: 'b-spin',
@@ -88,5 +88,66 @@ export const BUILTIN_PRESETS: Preset[] = [
     id: 'b-torn-collage',
     name: 'Torn collage',
     layers: [{ effectId: 'paper-cutout', params: { columns: 3, rows: 3, missing: 12, rotation: 8, seed: 4 } }],
+  },
+  {
+    id: 'b-broadcast',
+    name: 'Broadcast 1987',
+    layers: [
+      { effectId: 'ntsc', params: {} },
+      { effectId: 'crt-screen', params: { curvature: 0.15, vignette: 3, brightness: 1.6 } },
+    ],
+  },
+  {
+    id: 'b-dreamy',
+    name: 'Dreamy bloom',
+    layers: [
+      { effectId: 'bloom', params: { threshold: 0.6, intensity: 1.2 } },
+      { effectId: 'halation', params: { intensity: 0.5 } },
+      { effectId: 'vignette', params: { size: 0.85, transparency: 0.6 } },
+    ],
+  },
+  {
+    id: 'b-newsprint',
+    name: 'Newsprint',
+    layers: [
+      { effectId: 'halftone-screen', params: { frequency: 60 } },
+      { effectId: 'paper-scan', params: { opacity: 0.7 } },
+    ],
+  },
+  {
+    id: 'b-billboard',
+    name: 'LED billboard',
+    layers: [{ effectId: 'led-screen', params: { pixelSize: 1.6 } }],
+  },
+  {
+    id: 'b-mac',
+    name: '1-bit Mac',
+    layers: [{ effectId: 'macpaint', params: {} }],
+  },
+  {
+    id: 'b-star-filter',
+    name: 'Star filter',
+    layers: [
+      { effectId: 'star-glow', params: { threshold: 0.45, intensity: 0.7 } },
+      { effectId: 'bloom', params: { threshold: 0.75, intensity: 0.8 } },
+    ],
+  },
+  {
+    id: 'b-noir',
+    name: 'Noir',
+    layers: [
+      { effectId: 'film-bw', params: {} },
+      { effectId: 'contrast', params: { strength: 0.4 } },
+      { effectId: 'vignette', params: { size: 0.75 } },
+      { effectId: 'film-grain', params: { amount: 0.7 } },
+    ],
+  },
+  {
+    id: 'b-chromatic',
+    name: 'Chromatic stripes',
+    layers: [
+      { effectId: 'rgb-shift', params: { redOffset: 0.35, blueOffset: 0.35 } },
+      { effectId: 'stripe', params: { patternType: 0, repetitions: 60 } },
+    ],
   },
 ];
