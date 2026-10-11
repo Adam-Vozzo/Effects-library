@@ -153,10 +153,12 @@ void main() {
   // Atlas lookup (atlas rows are stored top-down in the canvas, flipped on upload).
   vec2 slot = vec2(mod(k, COLS), floor(k / COLS));
   vec2 atlasSize = vec2(COLS, u_atlasRows) * CELL;
-  vec2 apx = (slot + clamp(local, 0.02, 0.98)) * CELL;
-  vec2 auv = vec2(apx.x, atlasSize.y - apx.y) / atlasSize;
   // Slightly under-filtered and re-thresholded so tiny glyphs stay crisp instead of turning gray.
   float lod = max(0.0, log2(CELL.y / max(cellH, 1.0)) - 1.0);
+  // Keep the filter footprint inside the glyph's own atlas slot (no bleeding from neighbours).
+  vec2 margin = (0.5 * exp2(ceil(lod)) + 0.5) / CELL;
+  vec2 apx = (slot + clamp(local, margin, 1.0 - margin)) * CELL;
+  vec2 auv = vec2(apx.x, atlasSize.y - apx.y) / atlasSize;
   float g = textureLod(u_atlas, auv, lod).r;
   float crisp = saturate(8.0 / cellH);
   g = mix(g, smoothstep(0.2, 0.6, g), crisp);
