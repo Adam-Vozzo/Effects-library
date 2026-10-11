@@ -1,11 +1,12 @@
 import type { EffectDef } from '../../engine/types';
-import { textureFromImage, type Texture } from '../../engine/gl';
+import { textureFromData, textureFromImage, type Texture } from '../../engine/gl';
 import { bool, color, float, int, num } from '../helpers';
 import { DOWN2_GLSL, downTo } from './common-a';
 
 // Image → character grid. `density` = rows of characters over the image height, `tile aspect` = cell
-// width / height. Glyphs are rasterized once into an atlas (OffscreenCanvas 2D) and sorted by ink coverage,
-// so every set is an exact dark → bright ramp.
+// width / height. Glyphs are rasterized once into an atlas (OffscreenCanvas 2D) and sorted by measured ink
+// coverage; a LUT maps the wanted coverage (∝ luma³, effect.app's response) to the glyph with the nearest
+// coverage, so every character set gives the same tone response.
 
 /** Character sets (unsorted; the atlas builder orders them by measured coverage). */
 const CHAR_SETS = [
@@ -25,7 +26,8 @@ const COLS = 16;
 
 interface Atlas {
   tex: Texture;
-  count: number;
+  /** 256×1: relative coverage → r = glyph slot at or below it, g = position toward the next slot (0..255). */
+  lut: Texture;
   rows: number;
 }
 
@@ -34,7 +36,7 @@ function buildAtlas(gl: WebGL2RenderingContext, chars: string): Atlas {
   // Measure coverage of every glyph, then sort (space stays first).
   const meas = new OffscreenCanvas(CELL_W, CELL_H);
   const mc = meas.getContext('2d', { willReadFrequently: true })!;
-  const font = `bold ${Math.round(CELL_H * 0.78)}px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace`;
+  const font = `${Math.round(CELL_H * 0.72)}px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace`;
   const draw = (cx: OffscreenCanvasRenderingContext2D, ch: string, x: number, y: number) => {
     const shade = SHADES[ch];
     if (shade !== undefined) {
@@ -73,6 +75,19 @@ function buildAtlas(gl: WebGL2RenderingContext, chars: string): Atlas {
     return s;
   });
   const order = glyphs.map((_, i) => i).sort((a, b) => cov[a] - cov[b] || a - b);
+  // Relative coverage of each slot (0 … 1), strictly increasing so the LUT can interpolate.
+  const maxCov = Math.max(1, cov[order[order.length - 1]]);
+  const rel: number[] = [];
+  order.forEach((gi, k) => rel.push(Math.max(cov[gi] / maxCov, k > 0 ? rel[k - 1] + 1e-4 : 0)));
+  const lutData = new Uint8Array(256 * 4);
+  for (let x = 0; x < 256; x++) {
+    const u = x / 255;
+    let k = 0;
+    while (k < rel.length - 1 && rel[k + 1] <= u) k++;
+    const f = k < rel.length - 1 ? (u - rel[k]) / (rel[k + 1] - rel[k]) : 0;
+    lutData.set([k, Math.round(Math.min(1, Math.max(0, f)) * 255), 0, 255], x * 4);
+  }
+  const lut = textureFromData(gl, lutData, 256, 1, { nearest: true });
   const rows = Math.ceil(order.length / COLS);
   const cv = new OffscreenCanvas(COLS * CELL_W, rows * CELL_H);
   const cx = cv.getContext('2d')!;
@@ -80,7 +95,7 @@ function buildAtlas(gl: WebGL2RenderingContext, chars: string): Atlas {
   cx.fillRect(0, 0, cv.width, cv.height);
   order.forEach((gi, k) => draw(cx, glyphs[gi], (k % COLS) * CELL_W, Math.floor(k / COLS) * CELL_H));
   const tex = textureFromImage(gl, cv, cv.width, cv.height, { mipmaps: true });
-  return { tex, count: order.length, rows };
+  return { tex, lut, rows };
 }
 
 export const ascii: EffectDef = {
@@ -104,8 +119,8 @@ export const ascii: EffectDef = {
     down2: DOWN2_GLSL,
     main: /* glsl */ `
 uniform sampler2D u_atlas;
+uniform sampler2D u_lut;
 uniform sampler2D u_small; // input reduced to ~4 texels per cell (cell averages stay exact at any size)
-uniform float u_count;
 uniform float u_atlasRows;
 const float COLS = ${COLS}.0;
 const vec2 CELL = vec2(${CELL_W}.0, ${CELL_H}.0);
@@ -128,15 +143,13 @@ void main() {
     }
   }
   avg /= 16.0;
-  // Glyph coverage is linear-light ink, so pick glyphs by linear luminance.
-  l = luma(srgbToLinear(saturate(avg)));
+  l = luma(saturate(avg));
   if (u_invert) l = 1.0 - l;
   l = saturate((l - 0.5) * u_contrast + 0.5);
-  // Ordered dither between neighbouring glyphs gives the ramp more tonal steps.
-  const float B4[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-  ivec2 bc = ivec2(mod(cell, 4.0));
-  float dth = (B4[bc.y * 4 + bc.x] + 0.5) / 16.0;
-  float k = (l < u_cutDarks || l > 1.0 - u_cutLights) ? 0.0 : clamp(floor(l * (u_count - 1.0) + dth), 0.0, u_count - 1.0);
+  // Wanted ink coverage relative to the densest glyph → the glyph with the nearest coverage.
+  vec2 lk = texelFetch(u_lut, ivec2(int(l * l * l * 255.0 + 0.5), 0), 0).rg * 255.0;
+  float k = floor(lk.x + 0.5) + (lk.y > 127.5 ? 1.0 : 0.0);
+  if (l < u_cutDarks || l > 1.0 - u_cutLights) k = 0.0;
   // Atlas lookup (atlas rows are stored top-down in the canvas, flipped on upload).
   vec2 slot = vec2(mod(k, COLS), floor(k / COLS));
   vec2 atlasSize = vec2(COLS, u_atlasRows) * CELL;
@@ -153,12 +166,12 @@ void main() {
   },
   render(ctx) {
     const set = Math.max(0, Math.min(CHAR_SETS.length - 1, Math.round(num(ctx.params, 'charSet'))));
-    const atlas = ctx.cached(`atlas:${set}`, () => buildAtlas(ctx.gl, CHAR_SETS[set]), (a) => a.tex.dispose());
+    const atlas = ctx.cached(`atlas:${set}`, () => buildAtlas(ctx.gl, CHAR_SETS[set]), (a) => (a.tex.dispose(), a.lut.dispose()));
     const rows = Math.max(1, num(ctx.params, 'density'));
     const cellH = ctx.height / rows;
     const cellW = cellH * num(ctx.params, 'tileAspect');
     const small = downTo(ctx, ctx.input, (ctx.width / cellW) * 4, rows * 4);
-    const out = ctx.pass('main', { inputs: { u_atlas: atlas.tex, u_small: small }, uniforms: { u_count: atlas.count, u_atlasRows: atlas.rows } });
+    const out = ctx.pass('main', { inputs: { u_atlas: atlas.tex, u_lut: atlas.lut, u_small: small }, uniforms: { u_atlasRows: atlas.rows } });
     if (small !== ctx.input) ctx.release(small);
     return out;
   },
