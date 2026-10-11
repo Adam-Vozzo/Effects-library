@@ -3,9 +3,7 @@
 A personal WebGL 2 image-effects workstation for digital art. Stack GPU shader effects, tweak them
 live, save looks as presets and export stills up to **16K** (16384 px per side).
 
-The feature set and effect catalogue are modelled one-to-one on [effect.app](https://effect.app/):
-the same 73 effects in the same categories (Blur, Color, Distort, Effects, Generate, Custom, Film),
-with the same parameters, ranges and defaults. All shaders here are original implementations.
+All shaders here are original implementations.
 
 ## Effects (73)
 
