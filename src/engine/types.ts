@@ -107,6 +107,8 @@ export interface CurveParam extends ParamBase {
 export interface GradientParam extends ParamBase {
   type: 'gradient';
   default: GradientStop[];
+  /** Custom interpolation (e.g. OKLCh); used for both the LUT and the editor preview. Default: sRGB. */
+  evaluate?: (stops: GradientStop[], t: number) => [number, number, number];
 }
 
 export interface PaletteParam extends ParamBase {

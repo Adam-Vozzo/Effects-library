@@ -439,7 +439,7 @@ export class Renderer {
         }
         case 'gradient': {
           const key = 'grad:' + p.key + ':' + JSON.stringify(v);
-          u[n] = this.cached(layerId, key, () => textureFromFloat(this.gl, buildGradientLut(v as never), 256, 1), (t) => t.dispose());
+          u[n] = this.cached(layerId, key, () => textureFromFloat(this.gl, buildGradientLut(v as never, p.evaluate), 256, 1), (t) => t.dispose());
           break;
         }
         case 'palette': {

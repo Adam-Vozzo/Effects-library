@@ -90,8 +90,23 @@ function track(pos: number, onPos: (t: number, commit: boolean) => void): { el: 
   return { el, set };
 }
 
+/** Parse hints like "0 ironbow · 1 rainbow" or "0 = RGB, 1 = OKLab" into index → name. */
+export function parseNumberedHint(hint: string | undefined): Map<number, string> | null {
+  if (!hint) return null;
+  const parts = hint.split(/\s*[·,;]\s*(?=\d+\s*[:=]?\s*\S)/);
+  const map = new Map<number, string>();
+  for (const part of parts) {
+    const m = /^(\d+)\s*[:=]?\s*(.+)$/.exec(part.trim());
+    if (!m) return null;
+    map.set(Number(m[1]), m[2].trim());
+  }
+  return map.size >= 2 ? map : null;
+}
+
 export function sliderControl(def: FloatParam, value: number, host: ControlHost): Control {
   const step = def.step ?? (def.type === 'int' ? 1 : 0.01);
+  const names = def.type === 'int' ? parseNumberedHint(def.hint) : null;
+  const nameLabel = names ? h('span', { class: 'param__value-label param__value-name' }, names.get(Math.round(value)) ?? '') : null;
   const curve = def.curve ?? 1;
   const toPos = (v: number) => Math.pow(clamp((v - def.min) / (def.max - def.min || 1), 0, 1), 1 / curve);
   const fromPos = (t: number) => def.min + Math.pow(t, curve) * (def.max - def.min);
@@ -107,6 +122,7 @@ export function sliderControl(def: FloatParam, value: number, host: ControlHost)
     current = v;
     tr.set(toPos(v));
     num.value = formatNumber(v, step);
+    if (nameLabel) nameLabel.textContent = names!.get(Math.round(v)) ?? '';
     host.set(v, { commit });
   };
   tr.el.addEventListener('keydown', (e) => {
@@ -117,12 +133,13 @@ export function sliderControl(def: FloatParam, value: number, host: ControlHost)
     const mult = e.shiftKey ? 10 : 1;
     apply(clamp(quantize(current + dir * step * mult, def.min, def.max, step), def.min, def.max), true);
   });
-  const el = h('div', { class: 'param param--slider' }, header(def.label, host, num, unit), tr.el);
+  const el = h('div', { class: 'param param--slider', title: names ? undefined : def.hint }, header(def.label, host, nameLabel, num, unit), tr.el);
   return {
     el,
     update(v) {
       current = Number(v);
       tr.set(toPos(current));
+      if (nameLabel) nameLabel.textContent = names!.get(Math.round(current)) ?? '';
       if (document.activeElement !== num) num.value = formatNumber(current, step);
     },
   };

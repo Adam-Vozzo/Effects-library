@@ -177,6 +177,7 @@ const round3 = (v: number) => Math.round(v * 1000) / 1000;
 // ---------------------------------------------------------------- gradient
 
 export function gradientControl(def: GradientParam, value: GradientStop[], host: ControlHost): Control {
+  const evalG = def.evaluate ?? evalGradient;
   let stops: GradientStop[] = value.map((s) => ({ ...s }));
   let selected = 0;
   const bar = h('div', { class: 'gradient__bar' });
@@ -217,13 +218,7 @@ export function gradientControl(def: GradientParam, value: GradientStop[], host:
   };
 
   const render = () => {
-    const css: string[] = [];
-    for (let i = 0; i <= 32; i++) {
-      const t = i / 32;
-      const c = evalGradient(stops, t);
-      css.push(`${rgbToHex(c[0], c[1], c[2])} ${(t * 100).toFixed(1)}%`);
-    }
-    bar.style.background = `linear-gradient(90deg, ${css.join(',')})`;
+    bar.style.background = gradientCss(stops, evalG);
     stopsRow.innerHTML = '';
     stops.forEach((s, i) => {
       const st = h('div', { class: ['gradient__stop', i === selected && 'is-selected'], style: { left: s.pos * 100 + '%', '--c': s.color } });
@@ -244,7 +239,7 @@ export function gradientControl(def: GradientParam, value: GradientStop[], host:
           if (Math.abs(p - stops[selected].pos) > 0.001) moved = true;
           stops[selected].pos = p;
           st.style.left = p * 100 + '%';
-          bar.style.background = gradientCss(stops);
+          bar.style.background = gradientCss(stops, evalG);
           renderMids();
           syncInspector();
           emit(false);
@@ -279,7 +274,7 @@ export function gradientControl(def: GradientParam, value: GradientStop[], host:
           const p = clamp((e.clientX - r.left) / r.width, a.pos, b.pos);
           a.mid = clamp((p - a.pos) / Math.max(1e-6, b.pos - a.pos), 0.05, 0.95);
           mid.style.left = (a.pos + (b.pos - a.pos) * a.mid) * 100 + '%';
-          bar.style.background = gradientCss(stops);
+          bar.style.background = gradientCss(stops, evalG);
           emit(false);
         },
         end: () => emit(true),
@@ -309,7 +304,7 @@ export function gradientControl(def: GradientParam, value: GradientStop[], host:
   bar.addEventListener('pointerdown', (e) => {
     const r = bar.getBoundingClientRect();
     const p = clamp((e.clientX - r.left) / r.width, 0, 1);
-    const c = evalGradient(stops, p);
+    const c = evalG(stops, p);
     stops.push({ pos: p, color: rgbToHex(c[0], c[1], c[2]), mid: 0.5 });
     selected = stops.length - 1;
     sortKeep();
@@ -336,11 +331,11 @@ export function gradientControl(def: GradientParam, value: GradientStop[], host:
   };
 }
 
-function gradientCss(stops: GradientStop[]): string {
+function gradientCss(stops: GradientStop[], evalG: (s: GradientStop[], t: number) => [number, number, number] = evalGradient): string {
   const css: string[] = [];
-  for (let i = 0; i <= 32; i++) {
-    const t = i / 32;
-    const c = evalGradient(stops, t);
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48;
+    const c = evalG(stops, t);
     css.push(`${rgbToHex(c[0], c[1], c[2])} ${(t * 100).toFixed(1)}%`);
   }
   return `linear-gradient(90deg, ${css.join(',')})`;

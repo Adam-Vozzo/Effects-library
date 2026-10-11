@@ -1076,6 +1076,14 @@ button:disabled {
   font-size: 13px;
 }
 
+.param__value-name {
+  color: var(--text-2);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .param__hint {
   font-size: 11.5px;
   color: var(--text-3);

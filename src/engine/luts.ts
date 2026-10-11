@@ -106,10 +106,10 @@ export function evalGradient(stops: GradientStop[], t: number): [number, number,
   return [ca[0] + (cb[0] - ca[0]) * f, ca[1] + (cb[1] - ca[1]) * f, ca[2] + (cb[2] - ca[2]) * f];
 }
 
-export function buildGradientLut(stops: GradientStop[]): Float32Array {
+export function buildGradientLut(stops: GradientStop[], evaluate: (stops: GradientStop[], t: number) => [number, number, number] = evalGradient): Float32Array {
   const out = new Float32Array(LUT_SIZE * 4);
   for (let i = 0; i < LUT_SIZE; i++) {
-    const c = evalGradient(stops, i / (LUT_SIZE - 1));
+    const c = evaluate(stops, i / (LUT_SIZE - 1));
     out.set([c[0], c[1], c[2], 1], i * 4);
   }
   return out;

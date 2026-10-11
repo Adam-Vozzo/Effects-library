@@ -328,8 +328,8 @@ export class JpegEncoder {
       }
     } else {
       for (let mx = 0; mx < pw; mx += 16) {
-        for (const [ox, oy] of [[0, 0], [8, 0], [0, 8], [8, 8]]) {
-          this.loadBlock(this.yPlane, mx + ox, oy);
+        for (let k = 0; k < 4; k++) {
+          this.loadBlock(this.yPlane, mx + (k & 1) * 8, (k >> 1) * 8);
           this.encodeBlock(blk, 0, this.qY, this.dcY, this.acY);
         }
         this.loadSubBlock(this.cbPlane, mx);

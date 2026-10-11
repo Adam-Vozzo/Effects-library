@@ -106,6 +106,7 @@ export class ControlsPanel {
     for (const def of effect.params) {
       const ctl = this.createControl(def, layer.params[def.key] ?? (def.default as ParamValue), this.host(layer.id, def));
       if (!ctl) continue;
+      if (def.hint && !ctl.el.title && !(def.type === 'int' && ctl.el.querySelector('.param__value-name'))) ctl.el.title = def.hint;
       this.mounted.push({ def, ctl });
       if (def.group !== groupName) {
         groupName = def.group;
