@@ -50,7 +50,7 @@ export const ntsc: EffectDef = {
   shaders: {
     encode: /* glsl */ `
 ${COMMON}
-uniform sampler2D u_src;  // input, horizontally pre-blurred when the working res is lower
+uniform sampler2D u_src;  // input, pre-blurred when the working res is lower
 void main() {
   vec2 ij = floor(gl_FragCoord.xy);
   float v = (ij.y + 0.5) / u_work.y;
@@ -144,8 +144,10 @@ void main() {
     const W = Math.max(8, Math.round((ctx.width * workLong) / long));
     const H = Math.max(8, Math.min(ctx.height, MAX_ROWS));
     const common = { u_unit: unit, u_work: [W, H] as [number, number] };
-    const footprint = ctx.width / W;
-    const src = footprint > 1.5 ? ctx.blur(ctx.input, footprint * 0.4, 0) : ctx.input;
+    // Pre-filter when a working pixel covers several output pixels (large renders).
+    const fx = ctx.width / W;
+    const fy = ctx.height / H;
+    const src = fx > 1.5 || fy > 1.5 ? ctx.blur(ctx.input, fx > 1.5 ? fx * 0.4 : 0, fy > 1.5 ? fy * 0.4 : 0) : ctx.input;
     const enc = ctx.pass('encode', { width: W, height: H, inputs: { u_src: src }, uniforms: common });
     if (src !== ctx.input) ctx.release(src);
     const f = filterTaps(num(p, 'ringing'), num(p, 'color1'), num(p, 'color2'), num(p, 'smear'), unit);
