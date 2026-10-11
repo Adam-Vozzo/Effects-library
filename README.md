@@ -3,9 +3,9 @@
 A personal WebGL 2 image-effects workstation for digital art. Stack GPU shader effects, tweak them
 live, save looks as presets and export stills up to **16K** (16384 px per side).
 
-The feature set and effect catalogue are modelled one-to-one on [effect.app](https://effect.app/):
-the same 73 effects in the same categories (Blur, Color, Distort, Effects, Generate, Custom, Film),
-with the same parameters, ranges and defaults. All shaders here are original implementations.
+**Live:** https://adam-vozzo.github.io/Effects-library/
+
+All shaders here are original implementations.
 
 ## Effects (73)
 
@@ -66,6 +66,16 @@ Pick PNG (8- or 16-bit), JPG or WebP and a size: original, a scale factor, a lon
 The export dialog shows the output size, estimated GPU memory, and disables sizes beyond your GPU's
 `MAX_TEXTURE_SIZE`.
 
+## GitHub Pages
+
+The site is served by GitHub Pages straight from the `main` branch. Browsers can't run the source
+`index.html` (it loads TypeScript), so the production build is committed in `docs/` and the root
+`index.html` redirects there; Vite strips that redirect from everything it serves or builds.
+
+`.github/workflows/pages.yml` rebuilds `docs/` and commits it on every push to `main`, so don't edit
+`docs/` by hand. To rebuild it locally: `npm run build:pages`. If you'd rather drop the redirect,
+set the Pages folder to `/docs` (Settings → Pages) and the app is served at the site root.
+
 ## Project layout
 
 ```
@@ -78,6 +88,7 @@ src/
   export/        exporter, streaming PNG & JPEG encoders, encode worker
   presets/       built-in presets
   dev/harness.ts effect test harness (harness.html)
+docs/            production build served by GitHub Pages (generated, see above)
 tests/
   unit/          vitest: encoders
   e2e/smoke.mjs  Playwright: renders every effect + drives the editor and exports
