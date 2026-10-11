@@ -5,8 +5,9 @@ import type { TexFormat } from '../engine/gl';
 import type { Crop, Layer } from '../engine/types';
 import type { ExportSettings } from '../state/store';
 import type { EncodeMsg } from './encode-worker';
+import { REFERENCE_LONG_SIDE } from '../engine/units';
 
-export const REFERENCE_LONG_SIDE = 1000;
+export { REFERENCE_LONG_SIDE } from '../engine/units';
 export const MAX_EXPORT_SIDE = 16384;
 
 export interface ExportJob {
@@ -17,7 +18,7 @@ export interface ExportJob {
   sourceW: number;
   sourceH: number;
   settings: ExportSettings;
-  /** Units for effect params: 'relative' (1000 px long side) or 'source' pixels. */
+  /** Units for effect params: 'relative' (720 px long side reference) or 'source' pixels. */
   units: 'relative' | 'source';
 }
 

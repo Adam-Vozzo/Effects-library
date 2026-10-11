@@ -526,7 +526,7 @@ export class App {
       { label: 'Up to 4096 px', checked: st.previewMax === 4096, action: () => this.setSetting({ previewMax: 4096 }) },
       { label: 'Full resolution', checked: st.previewMax === 1e9, action: () => this.setSetting({ previewMax: 1e9 }) },
       { label: 'Effect size units', heading: true },
-      { label: 'Relative to image (1000 px reference)', checked: st.units === 'relative', action: () => this.setSetting({ units: 'relative' }) },
+      { label: 'Relative to image (720 px reference)', checked: st.units === 'relative', action: () => this.setSetting({ units: 'relative' }) },
       { label: 'Source pixels', checked: st.units === 'source', action: () => this.setSetting({ units: 'source' }) },
       { separator: true },
       { label: 'Save stack as preset…', icon: 'bookmark', action: () => this.savePreset() },

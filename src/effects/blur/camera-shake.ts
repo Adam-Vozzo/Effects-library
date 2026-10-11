@@ -9,7 +9,7 @@ const MAX_SAMPLES = 64;
 const TRANSLATE = 0.03; // image heights per unit amplitude * motion scale
 const ROTATE = 0.07; // radians per unit amplitude * motion scale
 const ZOOM = 0.1; // relative zoom per unit amplitude * motion scale
-const SHUTTER = 1 / 15; // seconds of (scaled) time blurred at Motion Blur = 1
+const SHUTTER = 1 / 15; // exposure time (s) at Motion Blur = 1
 
 function hash(i: number, seed: number): number {
   let h = Math.imul(i ^ Math.imul(seed + 0x9e37, 0x85ebca6b), 0xc2b2ae35) >>> 0;
@@ -128,7 +128,7 @@ void main() {
     const p = ctx.params;
     const t = ctx.time;
     const shutter = SHUTTER * Math.max(0, num(p, 'motionBlur'));
-    // Path length in px decides how many instants we need (about one per pixel of travel).
+    // Path length in px decides how many instants we need (one per ~1.5 px of travel).
     const H = ctx.height;
     const W = ctx.width;
     const reach = 0.5 * Math.hypot(W / H, 1); // centre-to-corner distance in image heights

@@ -3,6 +3,7 @@
 import type { Renderer } from '../engine/renderer';
 import type { Crop, Layer } from '../engine/types';
 import { getEffect } from '../effects/registry';
+import { relativePxScale } from '../engine/units';
 
 interface Job {
   key: string;
@@ -117,7 +118,7 @@ export class ThumbnailRenderer {
     const s = THUMB_LONG / Math.max(sw, sh);
     const w = Math.max(8, Math.round(sw * s));
     const h = Math.max(8, Math.round(sh * s));
-    const data = await r.renderToPixelsAsync(job.layers, { width: w, height: h, pxScale: Math.max(w, h) / 1000, time: 0, format: r.defaultFormat, crop: this.crop });
+    const data = await r.renderToPixelsAsync(job.layers, { width: w, height: h, pxScale: relativePxScale(w, h), time: 0, format: r.defaultFormat, crop: this.crop });
     const c = job.canvas;
     c.width = w;
     c.height = h;

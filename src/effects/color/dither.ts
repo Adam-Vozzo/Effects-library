@@ -160,8 +160,8 @@ void main() {
     const patMode = src.kind === 'hash' ? 0 : src.kind === 'blue' ? 1 : src.kind === 'ign' ? 2 : 3;
     const patSize = src.kind === 'tile' ? [src.w, src.h] : [1, 1];
 
-    // Block size: pixelStep is in effect.app preview pixels (~640px long side) → reference px × 1.5625.
-    const block = Math.max(1, Math.round(num(p, 'pixelStep') * ctx.pxScale * 1.5625));
+    // Block size: pixelStep is in effect.app preview pixels (~640px long side) → reference px × 720/640.
+    const block = Math.max(1, Math.round(num(p, 'pixelStep') * ctx.pxScale * 1.125));
     const bw = Math.ceil(ctx.width / block);
     const bh = Math.ceil(ctx.height / block);
     const blurred = block >= 6 ? ctx.blur(ctx.input, block * 0.25) : null;

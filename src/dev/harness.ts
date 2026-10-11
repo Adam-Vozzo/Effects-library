@@ -6,6 +6,7 @@
 //   &p.gaussian-blur.strength=30                      param override (JSON or number)
 import '../effects';
 import { Renderer } from '../engine/renderer';
+import { relativePxScale } from '../engine/units';
 import { allEffects, defaultParams, getEffect, registrationErrors } from '../effects';
 import type { Layer, ParamValue } from '../engine/types';
 
@@ -57,7 +58,8 @@ async function main() {
   const r = new Renderer(glCanvas);
   r.setSource(img);
   const time = Number(q.get('t') ?? 0);
-  const pxScale = w / img.width;
+  // Same scaling as the app (relative units); &units=source emulates the source-pixel setting.
+  const pxScale = q.get('units') === 'source' ? w / img.width : relativePxScale(w, h);
   const render = (layers: Layer[]) => {
     const out = r.renderChain(layers, { width: w, height: h, pxScale, time, format: r.defaultFormat, crop: null });
     r.present(out);
