@@ -5,10 +5,11 @@ import { bool, color, float } from '../helpers';
 // viewed from `distance`; each output ray is intersected with the sphere and the hit point's arc-length
 // coordinates address the picture, so the screen bulges and its edges recede (perspective), and the
 // corners are rounded by `bezel`. Outside the tube: `bg` at `bgOpacity`.
-// Beam: input decoded with `gamma correction`, times `brightness gain` and a tube vignette, re-encoded
-// with gamma 2.2. Shadow mask: a triangular lattice of round R/G/B phosphor dots in screen space
-// (3-colored lattice, 40 × density dots per short side, dot radius = size × dot pitch); each dot shows
-// its channel of the beam.
+// Beam: decoded with `gamma correction`, `brightness gain` in linear light, re-encoded with gamma 2.8
+// (so the default is tone-neutral like effect.app), times a tube vignette.
+// Shadow mask: a triangular lattice of round R/G/B phosphor dots in screen space (3-colored lattice,
+// 40 × density dots per short side, dot radius = size × dot pitch); each dot shows its channel of the
+// beam. The mask is applied to the encoded value so sub-pixel dots keep the average brightness.
 export const crtScreen: EffectDef = {
   id: 'crt-screen',
   name: 'CRT screen',
@@ -65,7 +66,7 @@ vec3 phosphor(vec2 q, float aa) {
       int k = int(mod(i - j + 0.5, 3.0));
       if (k == 0) m.r += w; else if (k == 1) m.g += w; else m.b += w;
     }
-  return m;
+  return min(m, 1.0);
 }
 
 void main() {
@@ -84,10 +85,11 @@ void main() {
 
   vec2 suv = clamp(s / ext * 0.5 + 0.5, 0.0, 1.0);
   vec4 src = texture(u_input, suv);
-  vec3 beam = pow(saturate(src.rgb), vec3(u_gamma));
+  // Beam in linear light (tube gamma), gain, re-encoded with the default tube gamma 2.8.
+  vec3 beam = pow(saturate(src.rgb), vec3(u_gamma)) * u_brightness;
+  vec3 c = pow(beam, vec3(1.0 / 2.8));
   float vig = 16.0 * suv.x * (1.0 - suv.x) * suv.y * (1.0 - suv.y);
-  beam *= pow(max(vig, 0.0), u_vignette * 0.02) * u_brightness;
-  vec3 c = pow(beam, vec3(1.0 / 2.2));
+  c *= pow(max(vig, 1e-6), u_vignette * 0.016);
   if (u_phosphorDots && u_density > 0.0) {
     // Dot coverage is applied to the encoded value so small (sub-pixel) dots keep effect.app's
     // average brightness instead of being brightened by the gamma curve.
@@ -96,9 +98,10 @@ void main() {
     float aa = px * sc * 0.7;
     c *= phosphor(q, aa);
   }
-  vec4 bg = vec4(u_bg, u_bgOpacity);
-  vec4 screen = vec4(c, src.a);
-  fragColor = mix(bg, screen, inside);
+  // Composite over the background in premultiplied space (bg may be transparent).
+  float a = mix(u_bgOpacity, src.a, inside);
+  vec3 pm = mix(u_bg * u_bgOpacity, c * src.a, inside);
+  fragColor = vec4(a > 1e-5 ? pm / a : vec3(0.0), a);
 }`,
   },
 };

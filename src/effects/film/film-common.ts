@@ -103,8 +103,8 @@ export function lookUniforms(s: FilmLook): Record<string, UniformValue> {
 }
 
 /** effect.app's "Amount" pad: x = color amount, y = tone amount, both 0..2 (pad center = 1). */
-export function amountParam() {
-  return point('amount', 'Amount', [0, 0], { hint: 'x: color strength, y: tone strength (center = 1×, edges 0× … 2×)' });
+export function amountParam(hint = 'x: color strength, y: tone strength (center = 1×, edges 0× … 2×)') {
+  return point('amount', 'Amount', [0, 0], { hint });
 }
 
 /** Pad value (our [-1, 1] convention) to [color, tone] amounts in 0..2. */

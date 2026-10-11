@@ -50,7 +50,7 @@ void main() {
   float h = H(v_uv);
   float hx = H(v_uv + vec2(d, 0.0) * tx) - H(v_uv - vec2(d, 0.0) * tx);
   float hy = H(v_uv + vec2(0.0, d) * tx) - H(v_uv - vec2(0.0, d) * tx);
-  vec3 n = normalize(vec3(-vec2(hx, hy) * u_scale * 0.9, 1.0));
+  vec3 n = normalize(vec3(-vec2(hx, hy) * u_scale * 0.45, 1.0));
   int id = int(u_material + 0.5);
   vec3 col = srgbToLinear(shadeMaterial(id, n, L));
 
@@ -63,7 +63,7 @@ void main() {
   // Rim highlight: this point is higher than its neighbour toward the light.
   vec2 ho = L2 * u_highlightDistance * u_pxScale * tx;
   float hl = saturate((h - H(v_uv + ho)) * 2.5);
-  col += u_highlightIntensity * hl * srgbToLinear(MAT_LIT[clamp(id, 0, ${MATERIAL_COUNT - 1})]) * 0.8;
+  col += u_highlightIntensity * hl * srgbToLinear(MAT_LIT[clamp(id, 0, ${MATERIAL_COUNT - 1})]) * 0.5;
 
   // Broad lighting gradient across the surface and darker low areas.
   // (The surface is lit "through" the relief, so the broad gradient brightens away from the light.)

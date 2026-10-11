@@ -37,7 +37,7 @@ function inkParams(i: number, d: InkDefaults): ParamDef[] {
 const inkGlsl = (n: number) => /* glsl */ `
   if (u_ink${n}) {
     vec2 uv = v_uv - u_ink${n}Shift * 0.01;
-    vec3 c = texture(u_input, uv).rgb;
+    vec3 c = texture(u_soft, uv).rgb;
     float g = bwMix(c, u_ink${n}Reds, u_ink${n}Yellows, u_ink${n}Greens, u_ink${n}Cyans, u_ink${n}Blues, u_ink${n}Magentas);
     float cov = inkCoverage(saturate(1.0 - g), ${n}.0);
     col *= mix(vec3(1.0), risoInk(u_ink${n}Color), cov);
@@ -59,6 +59,7 @@ export const risograph: EffectDef = {
   shaders: {
     main: /* glsl */ `
 ${RISO_GLSL}
+uniform sampler2D u_soft; // source with a little ink spread
 // Photoshop "Black & White": gray = min + (mid - min) * secondary weight + (max - mid) * primary weight.
 float bwMix(vec3 c, float wr, float wy, float wg, float wc, float wb, float wm) {
   float r = c.r, g = c.g, b = c.b;
@@ -73,7 +74,7 @@ float bwMix(vec3 c, float wr, float wy, float wg, float wc, float wb, float wm) 
 
 // Grain field in [0,1] per drum: two octaves of value noise, cell size from the grain scale (reference px).
 float grainField(vec2 px, float seed) {
-  float s = max(u_grainScale * 12.0 * u_pxScale, 0.75);
+  float s = max(u_grainScale * 8.5 * u_pxScale, 0.75);
   vec2 p = px / s + seed * vec2(37.1, 91.7);
   float n = 0.62 * valueNoise(p) + 0.38 * valueNoise(mat2(0.8, 0.6, -0.6, 0.8) * p * 2.31 + 11.0);
   n = (n - 0.5) * 1.6 + 0.5; // normalize the 2-octave sum back toward a uniform-ish spread
@@ -88,7 +89,7 @@ float inkCoverage(float density, float seed) {
   float hard = smoothstep(n - 0.04, n + 0.04, density);
   float g = mix(hard, soft, saturate(u_grainSoftness * 2.0));
   // Drum toning: sparse ink specks even where the drum should stay clean.
-  vec2 cell = gl_FragCoord.xy / max(u_grainScale * 9.0 * u_pxScale, 0.75);
+  vec2 cell = gl_FragCoord.xy / max(u_grainScale * 6.4 * u_pxScale, 0.75);
   float speck = smoothstep(0.88, 0.98, valueNoise(cell + seed * 53.0)) * 0.3;
   g = g + speck * (1.0 - g);
   return mix(density, g, u_grainOpacity);
@@ -102,5 +103,11 @@ void main() {
 ${[1, 2, 3, 4].map(inkGlsl).join('\n')}
   fragColor = vec4(saturate(col), src.a);
 }`,
+  },
+  render(ctx) {
+    const soft = ctx.blur(ctx.input, 0.6 * ctx.pxScale);
+    const out = ctx.pass('main', { inputs: { u_soft: soft } });
+    ctx.release(soft);
+    return out;
   },
 };

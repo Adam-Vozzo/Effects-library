@@ -9,7 +9,8 @@ interface BwStock {
   look: Omit<FilmLook, 'name' | 'matrix' | 'saturation'>;
 }
 
-const LUMA: RGB3 = [0.2126, 0.7152, 0.0722];
+/** Spectral weights behind a deep orange (#21/#23A-like) contrast filter. */
+const RED_FILTER: RGB3 = [0.66, 0.33, 0.01];
 
 // Panchromatic B&W emulsions: spectral mix + characteristic curve (+ a hint of image tone).
 export const BW_STOCKS: BwStock[] = [
@@ -29,15 +30,15 @@ export const blackWhite: EffectDef = {
   keywords: 'black white bw monochrome lut film fuji ilford kodak',
   params: [
     choice('stock', 'Film stock', BW_STOCKS.map((s) => s.name), 0, 'slider'),
-    amountParam(),
+    amountParam('x: color (left = original color, center = B&W, right = red contrast filter), y: tone strength'),
   ],
   uniforms: (p) => {
     const s = pick(BW_STOCKS, p.stock);
     const [color, tone] = amountOf(p);
-    // Color amount below 1 lets the source color back in; above 1 exaggerates the emulsion's spectral
-    // response (weights pushed away from plain luminance, like a stronger contrast filter).
-    const k = Math.max(1, color);
-    const w = s.weights.map((v, i) => Math.max(0, LUMA[i] + (v - LUMA[i]) * k));
+    // Color amount below 1 lets the source color back in; above 1 it swings the spectral response
+    // toward an orange-red contrast filter (darker skies, lighter skin), fully at 2.
+    const f = Math.max(0, color - 1);
+    const w = s.weights.map((v, i) => v + (RED_FILTER[i] - v) * f);
     const sum = w[0] + w[1] + w[2] || 1;
     const row = w.map((v) => v / sum);
     const look: FilmLook = { name: s.name, ...s.look, matrix: [...row, ...row, ...row] };

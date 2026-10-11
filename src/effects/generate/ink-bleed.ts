@@ -84,15 +84,20 @@ void main() {
   float gl = length(g);
   vec2 dn = gl > 1e-4 ? g / gl : vec2(0.0, 1.0);
   vec2 pp = vec2(dot(rp, vec2(-dn.y, dn.x)), dot(rp, dn));
-  float streak = valueNoise(pp * vec2(0.55, 0.035) + u_pass * 5.0);
-  gain *= mix(1.0, 0.15 + 1.5 * streak, smoothstep(0.0, 0.05, gl));
-  // Pigment mixes with what is there (blue over pink turns violet); ink thins with decay as it travels.
-  fragColor = vec4(mix(c0.rgb, best.rgb, saturate(gain * 0.85)), mix(c0.a, best.a * (1.0 - u_decay * 2.0), saturate(gain)));
+  float streak = valueNoise(pp * vec2(0.28, 0.025));
+  gain *= mix(1.0, smoothstep(0.2, 0.75, streak) * 1.4, smoothstep(0.0, 0.04, gl));
+  // Pigment-weighted mixing: ink flooding bare paper keeps its full colour, inks of similar strength blend
+  // (blue over pink turns violet). Ink thins with decay as it travels.
+  gain = saturate(gain);
+  float w0 = c0.a * (1.0 - gain) + 1e-3, w1 = best.a * gain;
+  vec3 rgb = (c0.rgb * w0 + best.rgb * w1) / (w0 + w1);
+  fragColor = vec4(rgb, mix(c0.a, best.a * (1.0 - u_decay * 2.0), gain));
 }`,
     main: /* glsl */ `
 uniform sampler2D u_ink;   // settled simulation (linear rgb, a = ink)
 uniform sampler2D u_orig;  // seed (unspread) on the same grid
 uniform float u_strength;
+uniform float u_fringe;    // fringe fibre length (render px)
 vec4 textureBSpline(sampler2D t, vec2 uv) {
   vec2 size = vec2(textureSize(t, 0));
   vec2 st = uv * size - 0.5;
@@ -116,7 +121,18 @@ void main() {
     fragColor = vec4(vec3(m), 1.0);
     return;
   }
-  vec4 ink = textureBSpline(u_ink, v_uv);
+  // Hairy fringe: near ink fronts, look up the ink displaced along its gradient by streaky noise, so fine
+  // fibres reach out of every blob (and the paper shows through between them).
+  vec2 e = 1.5 / vec2(textureSize(u_ink, 0));
+  vec2 g = vec2(texture(u_ink, v_uv + vec2(e.x, 0.0)).a - texture(u_ink, v_uv - vec2(e.x, 0.0)).a,
+                texture(u_ink, v_uv + vec2(0.0, e.y)).a - texture(u_ink, v_uv - vec2(0.0, e.y)).a);
+  float gl = length(g);
+  vec2 dn = gl > 1e-5 ? g / gl : vec2(0.0);
+  vec2 rp0 = v_uv * u_resolution * (1000.0 / max(u_resolution.x, u_resolution.y));
+  vec2 pp = vec2(dot(rp0, vec2(-dn.y, dn.x)), dot(rp0, dn));
+  float fn = valueNoise(pp * vec2(0.35, 0.03)) * 0.7 + valueNoise(pp * vec2(0.9, 0.08) + 9.0) * 0.3;
+  vec2 fuv = v_uv + dn * (fn - 0.45) * u_fringe * smoothstep(0.0, 0.08, gl) / u_resolution;
+  vec4 ink = textureBSpline(u_ink, fuv);
   vec4 base = textureBSpline(u_orig, v_uv);
   vec3 bled = linearToSrgb(ink.rgb);
   vec3 low = linearToSrgb(base.rgb);
@@ -157,8 +173,8 @@ void main() {
     }
     const seed = ctx.pass('seed', { width: sw, height: sh, inputs: { u_src: cur } });
     for (const t of temps) ctx.release(t);
-    // First pass radius: spread 5 → 4% of the long side (the cascade reaches about 3x that).
-    const reach = num(p, 'spread') * 0.008 * SIM * Math.sqrt(phase);
+    // First pass radius: spread 5 → about 1.8% of the long side (the cascade reaches about 3x that).
+    const reach = num(p, 'spread') * 0.0036 * SIM * Math.sqrt(phase);
     const rate = 1 - Math.pow(1 - Math.min(1, num(p, 'intensity')), 5);
     let ink = seed;
     if (reach > 0.3) {
@@ -170,7 +186,8 @@ void main() {
       }
     }
     const strength = 1 - Math.pow(1 - Math.min(1, num(p, 'intensity')), 20);
-    const out = ctx.pass('main', { inputs: { u_ink: ink, u_orig: seed }, uniforms: { u_strength: strength } });
+    const fringe = num(p, 'spread') * 0.0032 * long * Math.sqrt(phase);
+    const out = ctx.pass('main', { inputs: { u_ink: ink, u_orig: seed }, uniforms: { u_strength: strength, u_fringe: fringe } });
     if (ink !== seed) ctx.release(ink);
     ctx.release(seed);
     return out;

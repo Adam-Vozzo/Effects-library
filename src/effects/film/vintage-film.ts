@@ -11,7 +11,7 @@ export const VINTAGE_STOCKS: FilmLook[] = [
     blackRGB: [-0.02, 0.01, 0.01], whiteRGB: [0.015, 0.015, -0.03], gammaRGB: [0.09, -0.05, -0.04],
     sat: 0.62,
     hue: { yellow: [-2, 0.9, -0.03], blue: [-10, 1.05, -0.01] },
-    shadows: [140, 0.04], highlights: [300, 0.03],
+    shadows: [140, 0.035], highlights: [300, 0.03],
   },
   {
     name: 'Agfacolor 50s',
@@ -41,7 +41,7 @@ export const VINTAGE_STOCKS: FilmLook[] = [
     wb: [1.04, 1, 0.92],
     black: 0, white: 0.96, gamma: 0.95, contrast: 0.75,
     sat: 1.05,
-    hue: { red: [-2, 1.15, -0.02], orange: [2, 1.05, 0], yellow: [-6, 1.1, 0], green: [-8, 0.85, -0.02], aqua: [-5, 0.9, 0], blue: [-6, 0.95, -0.03] },
+    hue: { red: [-2, 1.15, -0.02], orange: [2, 1.05, 0], yellow: [-6, 1.1, 0], green: [-8, 0.85, -0.02], aqua: [-5, 0.9, 0], blue: [-6, 0.88, -0.03] },
     shadows: [30, 0.012], highlights: [75, 0.02],
   },
   {
@@ -55,7 +55,7 @@ export const VINTAGE_STOCKS: FilmLook[] = [
   {
     name: 'Kodachrome Classic',
     black: 0, white: 0.97, gamma: 0.92, contrast: 0.8,
-    sat: 1.12, satShadows: 0.9,
+    sat: 1.06, satShadows: 0.88,
     hue: { red: [-2, 1.12, -0.02], orange: [0, 1.05, 0], yellow: [-4, 1.1, 0], green: [-4, 0.95, -0.02], blue: [-2, 1.08, -0.04] },
     shadows: [240, 0.008], highlights: [70, 0.01],
   },

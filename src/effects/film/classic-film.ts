@@ -8,10 +8,10 @@ export const CLASSIC_STOCKS: FilmLook[] = [
   {
     name: 'Kodak Portra 160',
     black: 0.03, white: 0.92, gamma: 0.68, contrast: 0.45,
-    blackRGB: [0, -0.02, 0.015], whiteRGB: [0.02, 0.01, -0.03], gammaRGB: [0, 0.03, -0.05],
+    blackRGB: [0, -0.01, 0.01], whiteRGB: [0.02, 0.01, -0.03], gammaRGB: [0, 0.03, -0.05],
     sat: 0.8, satShadows: 1.05, satHighlights: 1.2,
     hue: { orange: [2, 0.95, 0.01], green: [-6, 0.8, 0], aqua: [0, 0.85, 0], blue: [-4, 0.85, 0] },
-    shadows: [275, 0.015], highlights: [80, 0.012],
+    shadows: [255, 0.012], highlights: [80, 0.012],
   },
   {
     name: 'Kodak Portra 400',

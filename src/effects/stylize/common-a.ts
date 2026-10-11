@@ -162,7 +162,8 @@ vec3 shadeMaterial(int id, vec3 n, vec3 l) {
   float d0 = max(l.z, 0.0);
   float d = max(dot(n, l), 0.0);
   float rel = (d - d0) / max(1.0 - d0, 0.15);
-  vec3 c = rel >= 0.0 ? mix(base, lit, saturate(rel)) : mix(base, shade, saturate(-rel * (1.0 - 0.3 * prm.y)));
+  float relS = rel < 0.0 ? -rel / max(d0, 0.15) * max(1.0 - d0, 0.15) : 0.0;
+  vec3 c = rel >= 0.0 ? mix(base, lit, saturate(rel)) : mix(base, shade, saturate(relS) * 0.72);
   // Specular lobe (relative to the flat response).
   vec3 h = normalize(l + V);
   float s = pow(max(dot(n, h), 0.0), prm.x) - pow(max(h.z, 0.0), prm.x);
@@ -171,7 +172,7 @@ vec3 shadeMaterial(int id, vec3 n, vec3 l) {
   vec3 r = reflect(-V, n);
   float tilt = 1.0 - n.z;
   float band = smoothstep(-0.15, 0.25, r.y) - 0.55 * smoothstep(0.55, 0.95, r.y) - 0.35 * (1.0 - smoothstep(-0.7, -0.2, r.y));
-  c = mix(c, c * (0.35 + 1.1 * band) + lit * 0.15 * band, prm.y * saturate(tilt * 3.0));
+  c = mix(c, c * (0.55 + 0.8 * band) + lit * 0.12 * max(band, 0.0), prm.y * saturate(tilt * 2.5));
   if (id == 33) c *= 0.6 + 0.6 * hue2rgb(fract(r.x * 0.6 + r.y * 0.4 + 0.5));
   return linearToSrgb(max(c, 0.0));
 }

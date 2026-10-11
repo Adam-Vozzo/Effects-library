@@ -5,7 +5,7 @@ import { DEFAULT_TEX_SIZE, FIT_GLSL, FIT_OPTIONS, SPECKLE_GLSL } from './shared'
 
 const LEVELS = 10;
 /** Blur sigma (reference px) at blur strength 1 and texture strength 1. */
-const SIGMA_REF = 100;
+const SIGMA_REF = 72;
 /** Effective gaussian sigma of pyramid level k is about LEVEL_SIGMA * 2^k render px. */
 const LEVEL_SIGMA = 0.9;
 

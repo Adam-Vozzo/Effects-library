@@ -23,14 +23,13 @@ export const halation: EffectDef = {
   shaders: {
     extract: /* glsl */ `
 void main() {
-  vec3 c = clamp(texture(u_input, v_uv).rgb, 0.0, 1.0);
-  float l = luma(c);
+  float l = luma(max(texture(u_input, v_uv).rgb, 0.0));
   float k = max(u_knee, 1e-3);
   float x = l - u_threshold;
   float soft = clamp(x + k, 0.0, 2.0 * k);
   float e = max(soft * soft / (4.0 * k), x); // soft-knee excess above the threshold
   // Linear-light energy of the part above the threshold; Boost expands the brightest highlights.
-  float energy = srgbToLinear(vec3(l)).x * (e / max(l, 1e-4)) * (1.0 + 8.0 * u_boost * e);
+  float energy = srgbToLinear(vec3(l)).x * (e / max(l, 1e-4)) * (1.0 + 8.0 * u_boost * min(e, 1.0));
   fragColor = vec4(vec3(max(energy, 0.0)), 1.0);
 }`,
     composite: /* glsl */ `
@@ -39,7 +38,7 @@ uniform sampler2D u_global;
 uniform float u_globalW;
 void main() {
   vec4 src = texture(u_input, v_uv);
-  vec3 lin = srgbToLinear(clamp(src.rgb, 0.0, 1.0));
+  vec3 lin = srgbToLinear(max(src.rgb, 0.0));
   float h = 1.35 * texture(u_local, v_uv).r + u_globalW * texture(u_global, v_uv).r;
   vec3 tint = srgbToLinear(hue2rgb(fract(u_hue + 0.5)));
   vec3 add = tint * h * u_intensity * 0.29;

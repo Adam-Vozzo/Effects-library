@@ -4,7 +4,7 @@ import { pick, type RGB3 } from './film-common';
 
 interface GrainStock {
   name: string;
-  /** Noise cell size in reference pixels (1000-px long side); visible grains are roughly half of it. */
+  /** Noise cell size in reference pixels (1/720 of the long side); visible grains are roughly half of it. */
   size: number;
   /** Amplitude relative to the reference stock (Agfa APX 400). */
   strength: number;
@@ -21,24 +21,24 @@ const COLOR_RGB: RGB3 = [1, 0.85, 1.25];
 
 // Grain character per stock, from the stocks' published granularity (ISO, T-grain vs cubic, dye vs silver).
 export const GRAIN_STOCKS: GrainStock[] = [
-  { name: 'Agfa APX 400', size: 7, strength: 1, chroma: 0, rough: 0.6, clump: 0.5 },
-  { name: 'Agfa HDC 100', size: 5, strength: 0.55, chroma: 0.5, rough: 0.5, clump: 0.35, rgb: COLOR_RGB },
-  { name: 'Agfa HDC 400', size: 6.5, strength: 0.85, chroma: 0.55, rough: 0.55, clump: 0.45, rgb: COLOR_RGB },
-  { name: 'Fuji Pro 160S', size: 4.5, strength: 0.45, chroma: 0.4, rough: 0.45, clump: 0.3, rgb: COLOR_RGB },
-  { name: 'Fuji Pro 400H', size: 5.5, strength: 0.65, chroma: 0.45, rough: 0.5, clump: 0.4, rgb: COLOR_RGB },
-  { name: 'Fuji Provia 100F', size: 4, strength: 0.35, chroma: 0.35, rough: 0.4, clump: 0.25, rgb: COLOR_RGB },
-  { name: 'Fuji Superia 200 I', size: 5.5, strength: 0.7, chroma: 0.55, rough: 0.55, clump: 0.4, rgb: COLOR_RGB },
-  { name: 'Fuji Superia 200 II', size: 6, strength: 0.8, chroma: 0.6, rough: 0.6, clump: 0.45, rgb: COLOR_RGB },
-  { name: 'Fuji Superia Reala 100', size: 4.5, strength: 0.5, chroma: 0.45, rough: 0.45, clump: 0.3, rgb: COLOR_RGB },
-  { name: 'Ilford Delta 3200', size: 10, strength: 1.6, chroma: 0, rough: 0.7, clump: 0.6 },
-  { name: 'Ilford HP5 400', size: 7.5, strength: 1.05, chroma: 0, rough: 0.6, clump: 0.5 },
-  { name: 'Ilford Kentmere 400', size: 8, strength: 1.2, chroma: 0, rough: 0.65, clump: 0.55 },
-  { name: 'Ilford XP2 400', size: 6, strength: 0.6, chroma: 0, rough: 0.3, clump: 0.4 },
-  { name: 'Kodak Ektachrome E100', size: 4, strength: 0.35, chroma: 0.35, rough: 0.4, clump: 0.25, rgb: COLOR_RGB },
-  { name: 'Kodak Portra 800', size: 6.5, strength: 0.85, chroma: 0.45, rough: 0.5, clump: 0.45, rgb: COLOR_RGB },
-  { name: 'Kodak T-Max 3200', size: 9.5, strength: 1.5, chroma: 0, rough: 0.7, clump: 0.55 },
-  { name: 'Kodak Tri-X 400', size: 7.5, strength: 1.15, chroma: 0, rough: 0.75, clump: 0.5 },
-  { name: 'Rollei R3 200', size: 6, strength: 0.8, chroma: 0, rough: 0.55, clump: 0.45 },
+  { name: 'Agfa APX 400', size: 5, strength: 1, chroma: 0, rough: 0.6, clump: 0.5 },
+  { name: 'Agfa HDC 100', size: 3.6, strength: 0.55, chroma: 0.5, rough: 0.5, clump: 0.35, rgb: COLOR_RGB },
+  { name: 'Agfa HDC 400', size: 4.7, strength: 0.85, chroma: 0.55, rough: 0.55, clump: 0.45, rgb: COLOR_RGB },
+  { name: 'Fuji Pro 160S', size: 3.2, strength: 0.45, chroma: 0.4, rough: 0.45, clump: 0.3, rgb: COLOR_RGB },
+  { name: 'Fuji Pro 400H', size: 4, strength: 0.65, chroma: 0.45, rough: 0.5, clump: 0.4, rgb: COLOR_RGB },
+  { name: 'Fuji Provia 100F', size: 2.9, strength: 0.35, chroma: 0.35, rough: 0.4, clump: 0.25, rgb: COLOR_RGB },
+  { name: 'Fuji Superia 200 I', size: 4, strength: 0.7, chroma: 0.55, rough: 0.55, clump: 0.4, rgb: COLOR_RGB },
+  { name: 'Fuji Superia 200 II', size: 4.3, strength: 0.8, chroma: 0.6, rough: 0.6, clump: 0.45, rgb: COLOR_RGB },
+  { name: 'Fuji Superia Reala 100', size: 3.2, strength: 0.5, chroma: 0.45, rough: 0.45, clump: 0.3, rgb: COLOR_RGB },
+  { name: 'Ilford Delta 3200', size: 7.2, strength: 1.6, chroma: 0, rough: 0.7, clump: 0.6 },
+  { name: 'Ilford HP5 400', size: 5.4, strength: 1.05, chroma: 0, rough: 0.6, clump: 0.5 },
+  { name: 'Ilford Kentmere 400', size: 5.8, strength: 1.2, chroma: 0, rough: 0.65, clump: 0.55 },
+  { name: 'Ilford XP2 400', size: 4.3, strength: 0.6, chroma: 0, rough: 0.3, clump: 0.4 },
+  { name: 'Kodak Ektachrome E100', size: 2.9, strength: 0.35, chroma: 0.35, rough: 0.4, clump: 0.25, rgb: COLOR_RGB },
+  { name: 'Kodak Portra 800', size: 4.7, strength: 0.85, chroma: 0.45, rough: 0.5, clump: 0.45, rgb: COLOR_RGB },
+  { name: 'Kodak T-Max 3200', size: 6.8, strength: 1.5, chroma: 0, rough: 0.7, clump: 0.55 },
+  { name: 'Kodak Tri-X 400', size: 5.4, strength: 1.15, chroma: 0, rough: 0.75, clump: 0.5 },
+  { name: 'Rollei R3 200', size: 4.3, strength: 0.8, chroma: 0, rough: 0.55, clump: 0.45 },
 ];
 
 /** Grain refresh clock for "Frame Interval" (frames at this rate). */
@@ -66,7 +66,7 @@ export const filmGrain: EffectDef = {
     const clump = s.clump;
     return {
       u_gShape: [s.size, rough, clump, 1 / Math.sqrt(1 + rough * rough + clump * clump)],
-      u_gAmp: [s.strength * 0.031, s.chroma],
+      u_gAmp: [s.strength * 0.03, s.chroma],
       u_gRGB: s.rgb ?? [1, 1, 1],
       // Keep the domain offset small so float precision of the noise coordinates stays high.
       u_gSeed: ((frame * 0.6180339887) % 1) * 997,

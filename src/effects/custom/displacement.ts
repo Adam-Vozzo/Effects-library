@@ -45,8 +45,8 @@ void main() {
   vec2 d = m.rg - 0.5;
   if (u_direction == 1) d.y = 0.0;
   if (u_direction == 2) d.x = 0.0;
-  // amount 1 shifts up to ~24 reference px at the map extremes.
-  vec2 off = d * u_amount * 48.0 * u_pxScale / u_resolution;
+  // amount 1 shifts up to ~17 reference px at the map extremes.
+  vec2 off = d * u_amount * 35.0 * u_pxScale / u_resolution;
   fragColor = texture(u_input, mirrorUv(v_uv - off));
 }`,
   },

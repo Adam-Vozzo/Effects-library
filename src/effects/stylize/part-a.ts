@@ -7,6 +7,7 @@ import { ascii } from './ascii';
 import { macpaint } from './macpaint';
 import { halftoneScreen } from './halftone-screen';
 import { emboss } from './emboss';
+import { bevel } from './bevel';
 
 /** JPEG glitch … Star glow (effect.app "Effects" category, first half). */
-export const stylizeEffectsA: EffectDef[] = [jpegGlitch, scatter, risograph, vhs, ascii, macpaint, halftoneScreen, emboss];
+export const stylizeEffectsA: EffectDef[] = [jpegGlitch, scatter, risograph, vhs, ascii, macpaint, halftoneScreen, emboss, bevel];
