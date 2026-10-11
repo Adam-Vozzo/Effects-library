@@ -1,0 +1,143 @@
+import type { EffectDef } from '../../engine/types';
+import { choice } from '../helpers';
+import { amountOf, amountParam, lookUniforms, pick, stockShader, type FilmLook } from './film-common';
+
+// Color-negative stocks as scanned/printed: lifted, soft toes, creamy shoulders and per-stock palettes.
+// Original procedural approximations of each stock's published character (not derived from LUT files).
+export const CLASSIC_STOCKS: FilmLook[] = [
+  {
+    name: 'Kodak Portra 160',
+    black: 0.03, white: 0.92, gamma: 0.68, contrast: 0.45,
+    blackRGB: [0, -0.02, 0.015], whiteRGB: [0.02, 0.01, -0.03], gammaRGB: [0, 0.03, -0.05],
+    sat: 0.8, satShadows: 1.05, satHighlights: 1.2,
+    hue: { orange: [2, 0.95, 0.01], green: [-6, 0.8, 0], aqua: [0, 0.85, 0], blue: [-4, 0.85, 0] },
+    shadows: [275, 0.015], highlights: [80, 0.012],
+  },
+  {
+    name: 'Kodak Portra 400',
+    black: 0.035, white: 0.93, gamma: 0.72, contrast: 0.5,
+    blackRGB: [0, -0.01, 0.01], whiteRGB: [0.02, 0.005, -0.04], gammaRGB: [-0.02, 0.02, -0.04],
+    sat: 0.88, satShadows: 0.95, satHighlights: 1.1,
+    hue: { orange: [3, 1, 0.01], yellow: [-4, 0.9, 0], green: [-10, 0.8, 0], blue: [-6, 0.9, 0] },
+    shadows: [220, 0.012], highlights: [75, 0.016],
+  },
+  {
+    name: 'Kodak Portra 800',
+    black: 0.04, white: 0.93, gamma: 0.74, contrast: 0.55,
+    whiteRGB: [0.02, 0, -0.04], gammaRGB: [-0.04, 0, 0.03],
+    sat: 0.95, satShadows: 0.9,
+    hue: { red: [2, 1.03, 0], orange: [2, 1.04, 0], green: [-8, 0.85, -0.01], blue: [-8, 0.92, 0] },
+    shadows: [200, 0.015], highlights: [65, 0.018],
+  },
+  {
+    name: 'Kodak Ektar 100',
+    black: 0.02, white: 0.96, gamma: 0.85, contrast: 0.6,
+    sat: 1.15, satShadows: 0.85,
+    hue: { red: [-2, 1.12, -0.01], orange: [-2, 1.08, 0], yellow: [-2, 1.05, 0], green: [3, 1, -0.01], aqua: [4, 1.05, 0], blue: [2, 1.08, -0.02] },
+    shadows: [250, 0.01], highlights: [60, 0.006],
+  },
+  {
+    name: 'Kodak Gold 200',
+    wb: [1.03, 1, 0.94],
+    black: 0.03, white: 0.94, gamma: 0.78, contrast: 0.5,
+    whiteRGB: [0.015, 0.005, -0.04], gammaRGB: [-0.02, 0, 0.04],
+    sat: 1.02, satShadows: 0.9,
+    hue: { orange: [-2, 1.04, 0.01], yellow: [-5, 1.1, 0.01], green: [-10, 0.9, 0], aqua: [-5, 0.9, 0], blue: [-6, 0.9, 0] },
+    shadows: [40, 0.008], highlights: [80, 0.018],
+  },
+  {
+    name: 'Kodak Gold 800',
+    wb: [1.04, 1, 0.92],
+    black: 0.045, white: 0.93, gamma: 0.8, contrast: 0.6,
+    whiteRGB: [0.015, 0, -0.05], gammaRGB: [-0.03, 0, 0.05],
+    sat: 1.03, satShadows: 0.85,
+    hue: { orange: [-1, 1.05, 0], yellow: [-5, 1.08, 0], green: [-10, 0.85, -0.01], blue: [-5, 0.85, 0] },
+    shadows: [150, 0.015], highlights: [70, 0.022],
+  },
+  {
+    name: 'Kodak Ultramax 400',
+    wb: [1.02, 1, 0.96],
+    black: 0.025, white: 0.95, gamma: 0.8, contrast: 0.58,
+    sat: 1.05, satShadows: 0.9,
+    hue: { red: [0, 1.08, 0], orange: [0, 1.03, 0], yellow: [-4, 1.08, 0], green: [-6, 0.95, 0], blue: [-2, 1, -0.01] },
+    shadows: [230, 0.01], highlights: [50, 0.012],
+  },
+  {
+    name: 'Fuji Pro 160NS',
+    wb: [0.97, 1, 1.03],
+    black: 0.035, white: 0.94, gamma: 0.72, contrast: 0.35,
+    sat: 0.78,
+    hue: { orange: [-3, 0.92, 0.01], yellow: [4, 0.85, 0], green: [10, 0.85, 0], aqua: [-3, 0.9, 0], blue: [0, 0.85, 0] },
+    shadows: [200, 0.018], highlights: [150, 0.008],
+  },
+  {
+    name: 'Fuji Pro 400H',
+    wb: [0.96, 1, 1],
+    black: 0.05, white: 0.95, gamma: 0.68, contrast: 0.25,
+    gammaRGB: [0.03, -0.02, 0],
+    sat: 0.78,
+    hue: { orange: [-4, 0.9, 0.015], yellow: [8, 0.8, 0.01], green: [14, 0.85, 0.01], aqua: [-6, 0.95, 0], blue: [-8, 0.85, 0] },
+    shadows: [210, 0.02], highlights: [165, 0.016],
+  },
+  {
+    name: 'Fuji Superia 200',
+    wb: [0.97, 1.02, 1],
+    black: 0.03, white: 0.95, gamma: 0.8, contrast: 0.55,
+    sat: 1, satShadows: 0.85,
+    hue: { red: [-4, 1.05, 0], orange: [-3, 0.98, 0], green: [6, 1.08, -0.01], aqua: [0, 1.03, 0], blue: [-6, 0.95, 0] },
+    shadows: [165, 0.018], highlights: [330, 0.005],
+  },
+  {
+    name: 'Fuji Superia 400',
+    wb: [0.96, 1.02, 1.02],
+    black: 0.035, white: 0.95, gamma: 0.8, contrast: 0.58,
+    sat: 1.03, satShadows: 0.85,
+    hue: { red: [-5, 1.04, 0], orange: [-4, 0.98, 0], yellow: [5, 1, 0], green: [8, 1.1, -0.01], aqua: [-4, 1.05, 0], blue: [-8, 0.95, 0] },
+    shadows: [175, 0.025], highlights: [100, 0.006],
+  },
+  {
+    name: 'Fuji Superia 800',
+    wb: [0.96, 1.03, 1],
+    black: 0.04, white: 0.94, gamma: 0.82, contrast: 0.62,
+    sat: 1, satShadows: 0.85,
+    hue: { red: [-5, 1, 0], green: [8, 1.05, -0.01], blue: [-6, 0.95, 0] },
+    shadows: [160, 0.03], highlights: [90, 0.01],
+  },
+  {
+    name: 'Fuji Natura 1600',
+    wb: [0.95, 1.02, 1.05],
+    black: 0.06, white: 0.93, gamma: 0.82, contrast: 0.55,
+    sat: 0.88,
+    hue: { red: [-6, 0.85, 0], orange: [-4, 0.9, 0], green: [6, 0.95, 0], aqua: [0, 1.05, 0], blue: [-4, 1, 0] },
+    shadows: [185, 0.035], highlights: [110, 0.01],
+  },
+  {
+    name: 'Agfa Vista 100',
+    wb: [1.02, 1, 0.98],
+    black: 0.025, white: 0.95, gamma: 0.82, contrast: 0.62,
+    sat: 1.08, satShadows: 0.85,
+    hue: { red: [2, 1.15, -0.01], orange: [0, 1.04, 0], yellow: [-3, 1.04, 0], green: [2, 1, 0], aqua: [4, 1.1, 0], blue: [-6, 1.05, -0.02] },
+    shadows: [240, 0.012], highlights: [55, 0.01],
+  },
+  {
+    name: 'Agfa Optima 200',
+    wb: [1.02, 1, 0.97],
+    black: 0.03, white: 0.95, gamma: 0.78, contrast: 0.5,
+    sat: 1, satShadows: 0.9,
+    hue: { red: [1, 1.08, 0], orange: [0, 1, 0.005], green: [-4, 0.9, 0], blue: [-3, 0.95, 0] },
+    shadows: [260, 0.01], highlights: [70, 0.01],
+  },
+];
+
+export const classicFilm: EffectDef = {
+  id: 'classic-film',
+  name: 'Classic Film',
+  category: 'Film',
+  keywords: 'classic film filter color negative analog kodak portra ektar gold fuji superia pro 400h agfa film LUT color grading',
+  params: [
+    choice('stock', 'Film stock', CLASSIC_STOCKS.map((s) => s.name), 0, 'slider'),
+    amountParam(),
+  ],
+  uniforms: (p) => ({ ...lookUniforms(pick(CLASSIC_STOCKS, p.stock)), u_fAmt: amountOf(p) }),
+  shaders: { main: stockShader() },
+};
