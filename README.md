@@ -42,7 +42,7 @@ GPU is recommended for 8K–16K exports.
 Pick PNG (8- or 16-bit), JPG or WebP and a size: original, a scale factor, a long-side preset
 (1080 → 16K) or a custom size. The export renders the whole stack again at the target resolution:
 
-- effect sizes are resolution independent (params are expressed relative to a 1000 px long side —
+- effect sizes are resolution independent (params are expressed relative to a 720 px long side, effect.app’s working scale —
   switchable to source pixels in the menu), so a 16K export looks like the preview, just sharper;
 - draws are split into scissor tiles to stay under GPU watchdog limits, intermediates use half-float
   targets (8-bit above ~67 MP to save VRAM; 16-bit PNG keeps float precision end to end);
