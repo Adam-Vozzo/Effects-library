@@ -89,7 +89,9 @@ function findBlobs(mask: Uint8Array, w: number, h: number): Blob[] {
 function detect(sim: Float32Array, w: number, h: number, threshold: number): Blob[] {
   const mask = new Uint8Array(w * h);
   const minArea = 10 / (w * h);
-  const maxArea = 0.45;
+  // Boxes around most of the frame (sky, backdrop) carry no tracking information.
+  const maxArea = 0.3;
+  const maxBox = 0.35;
   const out: Blob[] = [];
   const iou = (a: Blob, b: Blob) => {
     const ix = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
@@ -102,7 +104,7 @@ function detect(sim: Float32Array, w: number, h: number, threshold: number): Blo
     if (k > 0 && t > 0.995) break;
     for (let i = 0; i < w * h; i++) mask[i] = sim[i] >= t ? 1 : 0;
     for (const b of findBlobs(mask, w, h)) {
-      if (b.area < minArea || b.area > maxArea) continue;
+      if (b.area < minArea || b.area > maxArea || (b.x1 - b.x0) * (b.y1 - b.y0) > maxBox) continue;
       if (out.some((o) => iou(o, b) > 0.6)) continue;
       out.push(b);
     }
@@ -265,10 +267,11 @@ vec2 sdBezier(vec2 pos, vec2 A, vec2 B, vec2 C) {
   vec2 e1 = d + (c + b * t.x) * t.x, e2 = d + (c + b * t.y) * t.y;
   return dot(e1, e1) < dot(e2, e2) ? vec2(length(e1), t.x) : vec2(length(e2), t.y);
 }
-float glyph(int ch, vec2 g) {
-  // g in [0,1]^2 inside the glyph cell (y up).
+// g in [0,1]^2 inside the glyph cell (y up); lod picks the atlas mip for the drawn caption size (explicit,
+// since this runs in non-uniform control flow).
+float glyph(int ch, vec2 g, float lod) {
   if (g.x < 0.0 || g.y < 0.0 || g.x > 1.0 || g.y > 1.0) return 0.0;
-  return texture(u_atlas, vec2((float(ch) + g.x) / ${GLYPHS.length}.0, g.y)).a;
+  return textureLod(u_atlas, vec2((float(ch) + g.x) / ${GLYPHS.length}.0, g.y), lod).a;
 }
 // Caption "NN XXX YYY": blob number and centre in thousandths of the image.
 int captionChar(int i, int id, vec2 c) {
@@ -326,6 +329,7 @@ void main() {
   float capH = u_captionSize * s;
   float capW = capH * u_glyphAspect; // glyph advance
   float capPad = capH * 0.2;
+  float glyphLod = max(0.0, log2(float(textureSize(u_atlas, 0).y) / max(capH, 1.0)));
   for (int i = 0; i < ${MAX_BLOBS}; i++) {
     if (i >= u_blobCount) break;
     vec4 bb = u_blobBox[i] * u_resolution.xyxy;
@@ -392,7 +396,7 @@ void main() {
       over(acc, col, u_captionBgOpacity);
       vec2 l = (px - cmin - vec2(capPad, 0.0)) / vec2(capW, chh);
       int ci = int(floor(l.x));
-      float a = ci >= 0 && ci < 10 ? glyph(captionChar(ci, i + 1, bc), vec2(fract(l.x), l.y)) : 0.0;
+      float a = ci >= 0 && ci < 10 ? glyph(captionChar(ci, i + 1, bc), vec2(fract(l.x), l.y), glyphLod) : 0.0;
       vec3 tc = mix(col, vec3(0.0), smoothstep(0.2, 0.5, u_captionBgOpacity));
       over(acc, tc, a);
     }

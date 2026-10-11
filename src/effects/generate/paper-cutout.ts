@@ -168,7 +168,8 @@ void main() {
     const rows = Math.max(1, num(p, 'rows'));
     const shift = num(p, 'uvShift');
     const scale = (1.06 + 2 * shift) * (1 + num(p, 'sizeVariation') * 0.5) * (1 + Math.max(num(p, 'widthVariation'), num(p, 'heightVariation')) * 0.5);
-    const rot = Math.min(num(p, 'rotation'), 90) * (Math.PI / 180);
+    // Pieces turn by up to ±rotation/2; cos + sin peaks at 45°.
+    const rot = Math.min(num(p, 'rotation') * 0.5, 45) * (Math.PI / 180);
     const tear = (num(p, 'tearSize') * 14 * ctx.pxScale) / Math.min(ctx.width / cols, ctx.height / rows);
     const ext = 0.5 * scale * (Math.cos(rot) + Math.sin(rot)) + shift + tear;
     const reach = Math.min(3, Math.max(1, Math.ceil(ext - 0.5)));

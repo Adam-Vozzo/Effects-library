@@ -160,7 +160,7 @@ void main() {
   vec2 r = (b - u_rasterOrigin) / u_rasterSize;
   vec2 cov = vec2(0.0);
   if (all(greaterThanEqual(r, vec2(0.0))) && all(lessThanEqual(r, vec2(1.0)))) {
-    cov = texture(u_textTex, vec2(r.x, 1.0 - r.y)).rg;
+    cov = textureLod(u_textTex, vec2(r.x, 1.0 - r.y), 0.0).rg;
   }
   float fillA = cov.r;
   float strokeA = cov.g;

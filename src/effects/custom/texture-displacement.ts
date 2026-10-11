@@ -9,8 +9,8 @@ const MAP_MAX = 2048;
  * Displace the image by a map (user texture, or a procedural vein texture): red drives x, green drives y, mid grey
  * = no shift. Passes: map (fit + curve) → separable blur → displace.
  */
-export const displacement: EffectDef = {
-  id: 'displacement',
+export const textureDisplacement: EffectDef = {
+  id: 'texture-displacement',
   name: 'Displacement',
   category: 'Custom',
   keywords: 'displace distort map offset texture warp',
