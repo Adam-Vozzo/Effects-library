@@ -30,13 +30,24 @@ export const vignette: EffectDef = {
 uniform int u_libMode;
 
 // Gauge of a regular n-gon with edge normals at rot + k * 2pi/n, scaled so that its
-// mid-radius ((inradius + circumradius) / 2) is 1.
+// mid-radius ((inradius + circumradius) / 2) is 1. The max over the edge distances is a p-norm so
+// the falloff has no creases along the corner directions (corners are rounded by ~4%).
 float polyGauge(vec2 p, float n, float rot) {
   float seg = TAU / n;
-  float a = atan(p.y, p.x) - rot;
-  float k = a - seg * floor(a / seg + 0.5);
+  float s = 0.0;
+  float m = 0.0;
+  for (int i = 0; i < 8; i++) {
+    if (float(i) >= n) break;
+    float a = rot + seg * float(i);
+    m = max(m, dot(p, vec2(cos(a), sin(a))));
+  }
+  for (int i = 0; i < 8; i++) {
+    if (float(i) >= n) break;
+    float a = rot + seg * float(i);
+    s += pow(max(dot(p, vec2(cos(a), sin(a))), 0.0) / max(m, 1e-6), 16.0);
+  }
   float c = cos(PI / n);
-  return length(p) * cos(k) * (1.0 + c) / (2.0 * c);
+  return m * pow(s, 1.0 / 16.0) * (1.0 + c) / (2.0 * c);
 }
 
 float shapeGauge(vec2 p) {

@@ -27,7 +27,7 @@ void main() {
   // Grain frame: static when speed = 0, otherwise a new pattern 'speed' times per second.
   float frame = u_speed > 0.0 ? floor(u_time * u_speed) : 0.0;
   // Grain cells smaller than a pixel average out: shrink the amplitude instead of aliasing.
-  float cellPx = u_size * 1.4 * u_pxScale;
+  float cellPx = u_size * 1.6 * u_pxScale;
   vec2 p = gl_FragCoord.xy / max(cellPx, 1.0) - 0.5;
   float aa = min(cellPx, 1.0);
   vec3 seed = vec3(17.0, 5.0, 11.0) * mod(frame, 997.0);
@@ -39,7 +39,9 @@ void main() {
   // Tonal response: quadratic Bezier through shadow / mid-tone / highlight weights, plus a floor.
   float w = u_shadow * (1.0 - L) * (1.0 - L) + u_midTone * 2.0 * L * (1.0 - L) + u_highlight * L * L;
   w = u_floor + (1.0 - u_floor) * w;
-  vec3 c = src.rgb + n * (u_amount * w * 0.034 * aa);
+  // Grain fades out in channels approaching white, so clipped highlights stay clean.
+  vec3 roll = saturate((1.0 - src.rgb) * 8.0);
+  vec3 c = src.rgb + n * roll * (u_amount * w * 0.036 * aa);
   fragColor = vec4(max(c, 0.0), src.a);
 }`,
   },

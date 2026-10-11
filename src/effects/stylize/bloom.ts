@@ -1,7 +1,7 @@
 import type { EffectDef } from '../../engine/types';
 import type { Texture } from '../../engine/gl';
 import { float, int } from '../helpers';
-import { KNEE_GLSL } from './common-a';
+import { DOWN2_GLSL, KNEE_GLSL, downTo } from './common-a';
 
 // Bloom in linear light: bright-pass with a soft knee → six gaussian levels (6…192 reference px) mixed by
 // `bloom factor` (low = tight glow around highlights, high = wide haze) → added (or screened) onto the
@@ -67,6 +67,7 @@ export const bloom: EffectDef = {
     int('tonemapper', 'tonemapper', 0, 7, 0),
   ],
   shaders: {
+    down2: DOWN2_GLSL,
     prefilter: /* glsl */ `
 ${KNEE_GLSL}
 void main() {
@@ -101,10 +102,15 @@ void main() {
     const hw = Math.max(1, Math.round(ctx.width / 2));
     const hh = Math.max(1, Math.round(ctx.height / 2));
     const pre = ctx.pass('prefilter', { width: hw, height: hh });
-    // Sigmas in half-res texels.
+    // Work at the coarsest resolution where the finest level is still ~2.5 texels wide (cheap at 16K).
+    const s0 = BASE_SIGMA * ctx.pxScale;
+    const f = Math.max(2, s0 / 2.5);
+    const work = downTo(ctx, pre, ctx.width / f, ctx.height / f);
+    if (work !== pre) ctx.release(pre);
+    const k = ctx.width / work.width; // render px per work texel
     const levels: Texture[] = [];
-    for (let i = 0; i < LEVELS; i++) levels.push(ctx.blur(pre, (BASE_SIGMA * Math.pow(2, i) * ctx.pxScale) / 2));
-    ctx.release(pre);
+    for (let i = 0; i < LEVELS; i++) levels.push(ctx.blur(work, (s0 * Math.pow(2, i)) / k));
+    ctx.release(work);
     const inputs: Record<string, Texture> = {};
     levels.forEach((t, i) => (inputs[`u_b${i}`] = t));
     const out = ctx.pass('main', { inputs });

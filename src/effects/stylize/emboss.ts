@@ -73,7 +73,9 @@ void main() {
 }`,
   },
   render(ctx) {
-    const soft = ctx.blur(ctx.input, num(ctx.params, 'shadowBlur') * ctx.pxScale);
+    const sigma = num(ctx.params, 'shadowBlur') * ctx.pxScale;
+    if (sigma < 0.35) return ctx.pass('main', { inputs: { u_soft: ctx.input } });
+    const soft = ctx.blur(ctx.input, sigma);
     const out = ctx.pass('main', { inputs: { u_soft: soft } });
     ctx.release(soft);
     return out;

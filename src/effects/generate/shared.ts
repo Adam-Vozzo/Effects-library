@@ -24,12 +24,22 @@ float grainNoise(vec2 p, float seed) {
  * Returns a signed variation around 0 (roughly unit variance): grain, fibres, mottling and scanner streaks.
  */
 export const PAPER_GLSL = /* glsl */ `
-// Thin curvy fibres: ridges of stretched gradient noise whose orientation drifts slowly.
+// Thin fibres: ridges of stretched gradient noise. The orientation drifts slowly across the sheet; it is blended
+// from four fixed orientations (rotating the coordinates themselves would shear the pattern far from the origin).
 float paperFibres(vec2 p, float seed) {
-  float a = gradientNoise(p * 0.012 + seed) * 3.0;
-  vec2 q = rot2(a) * p;
-  float r = 1.0 - abs(gradientNoise(q * vec2(0.035, 0.42) + seed * 3.1));
-  return pow(r, 10.0);
+  float th = gradientNoise(p * 0.004 + seed) * 2.5;
+  float f = 0.0, wsum = 0.0;
+  for (int k = 0; k < 4; k++) {
+    float phi = float(k) * 0.7853982;
+    float w = max(cos(2.0 * (th - phi)), 0.0);
+    w *= w;
+    if (w < 1e-3) continue;
+    vec2 q = rot2(phi) * p;
+    float r = 1.0 - abs(gradientNoise(q * vec2(0.035, 0.42) + seed * 3.1 + float(k) * 17.0));
+    f += pow(r, 10.0) * w;
+    wsum += w;
+  }
+  return f / max(wsum, 1e-4);
 }
 float paperTexture(vec2 p, int mode) {
   float rough = mode == 1 ? 1.0 : 0.0;

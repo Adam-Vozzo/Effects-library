@@ -15,6 +15,9 @@ const CHAR_SETS = [
   ' 01',
 ];
 
+/** Shade characters rendered procedurally (coverage). */
+const SHADES: Record<string, number> = { '░': 0.25, '▒': 0.5, '▓': 0.75, '█': 1 };
+
 const CELL_W = 40;
 const CELL_H = 64;
 const COLS = 16;
@@ -32,6 +35,21 @@ function buildAtlas(gl: WebGL2RenderingContext, chars: string): Atlas {
   const mc = meas.getContext('2d', { willReadFrequently: true })!;
   const font = `bold ${Math.round(CELL_H * 0.78)}px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace`;
   const draw = (cx: OffscreenCanvasRenderingContext2D, ch: string, x: number, y: number) => {
+    const shade = SHADES[ch];
+    if (shade !== undefined) {
+      // Block elements are drawn as cell-filling dither patterns so neighbouring cells join seamlessly.
+      cx.fillStyle = '#fff';
+      const g = CELL_W / 5;
+      for (let j = 0; j < CELL_H / g; j++) {
+        for (let i = 0; i < 5; i++) {
+          const k = (i & 1) + 2 * (j & 1); // 2x2 ordered dither
+          if ((shade >= 1) || (shade >= 0.75 && k !== 3) || (shade >= 0.5 && (k === 0 || k === 3)) || (shade >= 0.25 && k === 0)) {
+            cx.fillRect(x + i * g, y + j * g, g, g);
+          }
+        }
+      }
+      return;
+    }
     cx.font = font;
     cx.textAlign = 'center';
     cx.textBaseline = 'middle';

@@ -3,7 +3,7 @@ import type { Texture } from '../../engine/gl';
 import { bool, curve, float, int, num, point, texture } from '../helpers';
 
 /** Simulation grid (long side): fixed relative to the image so the bleed looks the same at any render size. */
-const SIM = 640;
+const SIM = 480;
 const PASSES = 10;
 
 /**
@@ -69,7 +69,7 @@ void main() {
   float jit = valueNoise(rp / 2.5 + u_pass * 7.0);
   float a0 = hash12(p + u_pass * 131.0) * TAU;
   vec2 bias = u_direction * 0.9;
-  float rr = u_r * (0.15 + 1.25 * absorb) * (0.5 + 0.7 * jit);
+  float rr = u_r * (0.4 + 0.9 * absorb) * (0.6 + 0.6 * jit);
   vec4 best = c0;
   for (int i = 0; i < 8; i++) {
     float ang = a0 + float(i) * (TAU / 8.0);
@@ -98,6 +98,9 @@ uniform sampler2D u_ink;   // settled simulation (linear rgb, a = ink)
 uniform sampler2D u_orig;  // seed (unspread) on the same grid
 uniform float u_strength;
 uniform float u_fringe;    // fringe fibre length (render px)
+uniform sampler2D u_inkSoft;  // slightly blurred simulation (soft fronts)
+uniform sampler2D u_inkWide;  // widely blurred simulation (water wash beyond the fronts)
+uniform sampler2D u_seedWide; // seed blurred the same way
 vec4 textureBSpline(sampler2D t, vec2 uv) {
   vec2 size = vec2(textureSize(t, 0));
   vec2 st = uv * size - 0.5;
@@ -121,33 +124,52 @@ void main() {
     fragColor = vec4(vec3(m), 1.0);
     return;
   }
-  // Hairy fringe: near ink fronts, look up the ink displaced along its gradient by streaky noise, so fine
-  // fibres reach out of every blob (and the paper shows through between them).
+  // Hairy fringe: near ink fronts the ink is looked up displaced along its gradient by streak noise. The streaks
+  // come from line-integral convolution of fine noise along the gradient, so they stay perpendicular to the
+  // front on any curvature (fibres reach out of every blob and the paper shows between them).
   vec2 e = 1.5 / vec2(textureSize(u_ink, 0));
   vec2 g = vec2(texture(u_ink, v_uv + vec2(e.x, 0.0)).a - texture(u_ink, v_uv - vec2(e.x, 0.0)).a,
                 texture(u_ink, v_uv + vec2(0.0, e.y)).a - texture(u_ink, v_uv - vec2(0.0, e.y)).a);
   float gl = length(g);
-  vec2 dn = gl > 1e-5 ? g / gl : vec2(0.0);
-  vec2 rp0 = v_uv * u_resolution * (1000.0 / max(u_resolution.x, u_resolution.y));
-  vec2 pp = vec2(dot(rp0, vec2(-dn.y, dn.x)), dot(rp0, dn));
-  float fn = valueNoise(pp * vec2(0.35, 0.03)) * 0.7 + valueNoise(pp * vec2(0.9, 0.08) + 9.0) * 0.3;
-  vec2 fuv = v_uv + dn * (fn - 0.45) * u_fringe * smoothstep(0.0, 0.08, gl) / u_resolution;
-  vec4 ink = textureBSpline(u_ink, fuv);
-  vec4 base = textureBSpline(u_orig, v_uv);
-  vec3 bled = linearToSrgb(ink.rgb);
-  vec3 low = linearToSrgb(base.rgb);
-  // The soaked paper loses most fine detail; where the ink changed the picture its colour replaces it fully.
+  float edge = smoothstep(0.0, 0.08, gl);
+  vec2 fuv = v_uv;
+  if (edge > 0.0 && u_fringe > 0.0) {
+    vec2 dn = g / gl;
+    // Relative px (720 per long side) so the fibres look the same at any render size.
+    float k = 720.0 / max(u_resolution.x, u_resolution.y);
+    vec2 rp0 = v_uv * u_resolution * k;
+    float L = u_fringe * k;
+    float acc = 0.0;
+    for (int i = 0; i < 10; i++) {
+      float t = (float(i) / 9.0 - 0.5) * L;
+      acc += valueNoise((rp0 + dn * t) / 1.1);
+    }
+    float fn = (acc / 10.0 - 0.5) * 1.1;
+    fuv += dn * fn * u_fringe * edge / u_resolution;
+  }
+  vec4 inkS = textureBSpline(u_ink, fuv);
+  vec4 inkB = texture(u_inkSoft, fuv);
+  vec3 bled = linearToSrgb(inkS.rgb);
+  vec3 low = linearToSrgb(textureBSpline(u_orig, v_uv).rgb);
+  // Where the ink changed the picture its soft colour replaces the detail; untouched paper keeps it.
   float change = saturate(length(bled - low) * 20.0);
-  vec3 c = mix(src.rgb + (bled - low), bled, max(change, 0.7));
+  vec3 inkCol = linearToSrgb(mix(inkS.rgb, inkB.rgb, 0.8));
+  vec3 c = mix(src.rgb + (bled - low), inkCol, change);
   // Ink pigment: denser and more saturated than the source colour.
   float L = luma(c);
-  c = mix(c, mix(vec3(L), c, 1.45) * 0.93, saturate(change * ink.a * 1.3));
-  // Fibre grain: thin streaks that modulate the ink density.
+  c = mix(c, mix(vec3(L), c, 1.45) * 0.93, saturate(change * inkS.a * 1.3));
+  // Water wash: a pale, greyish stain of the ink colour just beyond the fronts.
+  vec4 inkW = texture(u_inkWide, v_uv);
+  float wash = saturate((inkW.a - texture(u_seedWide, v_uv).a) * 4.0) * (1.0 - change);
+  vec3 washCol = linearToSrgb(inkW.rgb);
+  washCol = mix(washCol, vec3(luma(washCol)), 0.35);
+  c = mix(c, washCol, wash * 0.6);
+  // Fibre grain in the ink: thin streaks that modulate its density.
   vec2 rp = gl_FragCoord.xy / u_pxScale / max(u_grainSize, 0.1);
   float a = gradientNoise(rp * 0.01) * 2.0;
   vec2 q = rot2(a) * rp;
   float streak = gradientNoise(q * vec2(0.08, 0.9)) * 0.7 + gradientNoise(rp * 0.5) * 0.3;
-  c *= 1.0 + u_grain * 0.12 * streak * (0.3 + ink.a);
+  c *= 1.0 + u_grain * 0.15 * streak * max(change, wash) * (0.4 + inkS.a);
   fragColor = vec4(mix(src.rgb, c, u_strength), src.a);
 }`,
   },
@@ -187,7 +209,16 @@ void main() {
     }
     const strength = 1 - Math.pow(1 - Math.min(1, num(p, 'intensity')), 20);
     const fringe = num(p, 'spread') * 0.0032 * long * Math.sqrt(phase);
-    const out = ctx.pass('main', { inputs: { u_ink: ink, u_orig: seed }, uniforms: { u_strength: strength, u_fringe: fringe } });
+    // Soft fronts and the water wash come from blurred copies of the (small) simulation grid.
+    const simScale = SIM / 480;
+    const inkSoft = ctx.blur(ink, 2.2 * simScale);
+    const inkWide = ctx.blur(ink, 7 * simScale);
+    const seedWide = ctx.blur(seed, 7 * simScale);
+    const out = ctx.pass('main', {
+      inputs: { u_ink: ink, u_orig: seed, u_inkSoft: inkSoft, u_inkWide: inkWide, u_seedWide: seedWide },
+      uniforms: { u_strength: strength, u_fringe: fringe },
+    });
+    for (const t of [inkSoft, inkWide, seedWide]) ctx.release(t);
     if (ink !== seed) ctx.release(ink);
     ctx.release(seed);
     return out;

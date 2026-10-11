@@ -1,7 +1,7 @@
 import type { EffectDef, ParamDef, ParamValues } from '../../engine/types';
 import { textureFromFloat } from '../../engine/gl';
 import { bool, choice, color, float, int, num, point } from '../helpers';
-import { RISO_GLSL, RISO_INK_NAMES } from './common-a';
+import { DOWN2_GLSL, RISO_GLSL, RISO_INK_NAMES, downTo } from './common-a';
 
 // Four-plate AM halftone. The image is separated into C/M/Y/K (gray-component replacement + total ink
 // limit), each plate is screened with its own angle / misregistration and printed with a chosen spot ink,
@@ -107,6 +107,7 @@ export const halftoneScreen: EffectDef = {
     ...INKS.flatMap((d, i) => inkParams(i, d)),
   ],
   shaders: {
+    down2: DOWN2_GLSL,
     main: /* glsl */ `
 ${RISO_GLSL}
 uniform sampler2D u_tone; // slightly blurred source (tone per dot, not per pixel)
@@ -176,8 +177,12 @@ ${plate(4, 'w')}
   },
   render(ctx) {
     const cdf = ctx.cached('cdf', () => textureFromFloat(ctx.gl, buildCdf(), 256, SHAPES.length), (t) => t.dispose());
-    const cell = ctx.height / Math.max(1, num(ctx.params, 'frequency'));
-    const tone = ctx.blur(ctx.input, cell * 0.22);
+    const freq = Math.max(1, num(ctx.params, 'frequency'));
+    const cell = ctx.height / freq;
+    // The tone only needs a few samples per halftone cell.
+    const small = downTo(ctx, ctx.input, (ctx.width * freq * 6) / ctx.height, freq * 6);
+    const tone = ctx.blur(small, (cell * 0.22 * small.height) / ctx.height);
+    if (small !== ctx.input) ctx.release(small);
     const out = ctx.pass('main', { inputs: { u_tone: tone, u_cdf: cdf } });
     ctx.release(tone);
     return out;

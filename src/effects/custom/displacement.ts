@@ -42,11 +42,12 @@ void main() {
     fragColor = vec4(saturate(m), 1.0);
     return;
   }
-  vec2 d = m.rg - 0.5;
+  // Map in image orientation: red pushes along +x, green along -y (down), as in top-left-origin maps.
+  vec2 d = (m.rg - 0.5) * vec2(1.0, -1.0);
   if (u_direction == 1) d.y = 0.0;
   if (u_direction == 2) d.x = 0.0;
-  // amount 1 shifts up to ~17 reference px at the map extremes.
-  vec2 off = d * u_amount * 35.0 * u_pxScale / u_resolution;
+  // amount 1 shifts up to ~21 reference px at the map extremes.
+  vec2 off = d * u_amount * 42.0 * u_pxScale / u_resolution;
   fragColor = texture(u_input, mirrorUv(v_uv - off));
 }`,
   },

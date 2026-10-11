@@ -1,6 +1,6 @@
 import type { EffectDef } from '../../engine/types';
 import { float, gradient, int, num } from '../helpers';
-import { KNEE_GLSL } from './common-a';
+import { DOWN2_GLSL, KNEE_GLSL, downTo } from './common-a';
 
 // Star / anamorphic streak glow: bright-pass (linear light, soft knee, optional hot-spot boost) at half
 // resolution, then one pass per streak line (both directions) that gathers the highlights along it with an
@@ -33,6 +33,7 @@ export const starGlow: EffectDef = {
     float('gradientShift', 'Gradient shift', -1, 1, 0),
   ],
   shaders: {
+    down2: DOWN2_GLSL,
     prefilter: /* glsl */ `
 ${KNEE_GLSL}
 void main() {
@@ -92,20 +93,24 @@ void main() {
     const n = Math.max(1, Math.round(num(p, 'sampleCount')));
     const len = num(p, 'length') * ctx.pxScale; // render px
     const step = len / n; // render px per sample
+    // Streaks are gathered at a reduced resolution (1/2 … 1/8) where one sample step is ~1.5 texels.
+    const f = Math.min(8, Math.max(2, step / 1.5));
+    const work = downTo(ctx, pre, ctx.width / f, ctx.height / f);
+    if (work !== pre) ctx.release(pre);
+    const k = ctx.width / work.width; // render px per work texel
     // Soften the bright pass so sparse samples don't leave dotted streaks.
-    const bright = ctx.blur(pre, Math.max(0.5, step * 0.25));
-    ctx.release(pre);
-    const acc = ctx.target(hw, hh);
+    const bright = ctx.blur(work, Math.max(0.5, (step / k) * 0.25));
+    ctx.release(work);
+    const acc = ctx.target(bright.width, bright.height);
     const count = Math.max(1, Math.round(num(p, 'streaks')));
     const base = (num(p, 'angleDeg') * Math.PI) / 180;
-    for (let k = 0; k < count; k++) {
-      const a = base + (k * Math.PI) / count;
-      const l = k % 2 === 1 ? num(p, 'alternate') : 1;
-      const st = step * l;
+    for (let i = 0; i < count; i++) {
+      const a = base + (i * Math.PI) / count;
+      const st = step * (i % 2 === 1 ? num(p, 'alternate') : 1);
       ctx.pass('streak', {
         target: acc,
         blend: 'add',
-        clear: k === 0 ? [0, 0, 0, 0] : undefined,
+        clear: i === 0 ? [0, 0, 0, 0] : undefined,
         inputs: { u_bright: bright },
         uniforms: { u_dir: [(Math.cos(a) * st) / ctx.width, (Math.sin(a) * st) / ctx.height] },
       });

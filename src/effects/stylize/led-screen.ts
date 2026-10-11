@@ -1,5 +1,5 @@
 import type { EffectDef } from '../../engine/types';
-import { bool, float } from '../helpers';
+import { bool, float, num } from '../helpers';
 
 // LED matrix. The image is averaged per square cell (cell = pixel size × 1.055% of the short side,
 // grid anchored at the image center; effect.app's default gives ~34 cells across the short side).
@@ -37,9 +37,11 @@ float roundMask(vec2 f, float g, float r, float s) {
   float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
   return 1.0 - smoothstep(-0.5 * s, 0.5 * s, d);
 }
+uniform sampler2D u_soft;  // input pre-blurred by ~cell/6 so 16 taps give a stable cell mean
+float cellSize(vec2 res) { return max(u_pixelSize * 0.01055 * min(res.x, res.y), 3.0); }
 void main() {
   vec2 res = u_resolution;
-  float cell = max(u_pixelSize * 0.01055 * min(res.x, res.y), 3.0);
+  float cell = cellSize(res);
   vec2 g = (v_uv - 0.5) * res / cell;
   vec2 id = floor(g);
   vec2 f = g - id;
@@ -48,29 +50,36 @@ void main() {
   for (int j = 0; j < 4; j++)
     for (int i = 0; i < 4; i++) {
       vec2 q = (id + (vec2(i, j) + 0.5) * 0.25) * cell / res + 0.5;
-      acc += texture(u_input, clamp(q, 0.0, 1.0));
+      acc += texture(u_soft, clamp(q, 0.0, 1.0));
     }
   vec4 col = acc / 16.0;
   float px = 1.0 / cell;  // one output pixel in cell units
-  float s = max(u_pixelBlur * 0.26, px);
+  float s = max(u_pixelBlur * 0.36, px);
   float gp = 0.5 * u_gap;
   vec3 c;
   float cover;
   if (u_rgbMode) {
     float w = (1.0 - 2.0 * gp) / 3.0;
-    float row = bandP(f.y, gp + 0.03, 1.0 - gp - 0.03, s);
+    float row = bandP(f.y, gp + 0.04, 1.0 - gp - 0.04, s);
     float mr = bandP(f.x, gp, gp + w, s);
     float mb = bandP(f.x, gp + w, gp + 2.0 * w, s);
     float mg = bandP(f.x, gp + 2.0 * w, 1.0 - gp, s);
     c = vec3(mr, mg, mb) * row * col.rgb;
     cover = saturate(mr + mg + mb) * row;
   } else {
-    float m = roundMask(f, gp + 0.03, 0.12, s);
+    float m = roundMask(f, gp + 0.04, 0.12, s);
     c = col.rgb * m;
     cover = m;
   }
   if (u_transparent) fragColor = vec4(cover > 1e-4 ? c / cover : vec3(0.0), cover * col.a);
   else fragColor = vec4(c, col.a);
 }`,
+  },
+  render(ctx) {
+    const cell = Math.max(num(ctx.params, 'pixelSize') * 0.01055 * Math.min(ctx.width, ctx.height), 3);
+    const soft = ctx.blur(ctx.input, cell / 6);
+    const out = ctx.pass('main', { inputs: { u_soft: soft } });
+    ctx.release(soft);
+    return out;
   },
 };

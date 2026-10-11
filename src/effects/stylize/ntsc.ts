@@ -1,6 +1,7 @@
 import type { EffectDef, RenderContext } from '../../engine/types';
 import { float, int, num } from '../helpers';
 import { REFERENCE_LONG_SIDE } from '../../engine/units';
+import { textureFromFloat } from '../../engine/gl';
 
 // Composite video (NTSC) encode → decode, simulated along each scan line:
 // 1) encode: RGB → YIQ, I/Q quadrature-modulated onto a color subcarrier (0.148 cycles per reference
@@ -49,6 +50,7 @@ export const ntsc: EffectDef = {
   shaders: {
     encode: /* glsl */ `
 ${COMMON}
+uniform sampler2D u_src;  // input, horizontally pre-blurred when the working res is lower
 void main() {
   vec2 ij = floor(gl_FragCoord.xy);
   float v = (ij.y + 0.5) / u_work.y;
@@ -56,14 +58,16 @@ void main() {
   vec3 rgb = vec3(0.0);
   for (int k = 0; k < 3; k++) {
     float u = (ij.x + (float(k) + 0.5) / 3.0) / u_work.x;
-    rgb += texture(u_input, vec2(u, v)).rgb;
+    rgb += texture(u_src, vec2(u, v)).rgb;
   }
   vec3 yiq = rgb2yiq(saturate(rgb / 3.0));
   float ph = carrierPhase(ij.x);
   float comp = yiq.x + yiq.y * cos(ph) + yiq.z * sin(ph);
-  // Composite noise: white per sample plus a little per-line level noise.
+  // Composite noise on a fixed raster (1 reference px × 1/480 of the height, so it looks the same at any
+  // output size): white per sample plus a little per-line level noise.
   float f = frameIndex();
-  float n = (hash13(vec3(ij, f)) - 0.5) * 6.0 + (hash12(vec2(lineIndex(ij.y), f + 7.0)) - 0.5) * 1.5;
+  float L = lineIndex(ij.y);
+  float n = (hash13(vec3(floor((ij.x + 0.5) / u_unit), L, f)) - 0.5) * 6.0 + (hash12(vec2(L, f + 7.0)) - 0.5) * 1.5;
   n *= u_noise;
   comp += n;
   // Stored range-safe for 8-bit targets: composite and luma scaled, I/Q offset.
@@ -72,24 +76,22 @@ void main() {
     decode: /* glsl */ `
 ${COMMON}
 uniform sampler2D u_enc;
+uniform sampler2D u_taps;  // per-tap weights: luma, I, Q, smear (each normalized)
 uniform int u_radius;      // taps on each side
-uniform float u_lumaHalf;  // luma filter half-length (working px)
-uniform float u_lumaCut;   // luma cutoff (cycles per working px)
-uniform float u_sigI;
-uniform float u_sigQ;
-uniform float u_smearTau;  // smear length (working px), signed: + trails right, - trails left
-float sinc(float x) { return abs(x) < 1e-4 ? 1.0 : sin(PI * x) / (PI * x); }
+uniform float u_smearMix;
 void main() {
   ivec2 ij = ivec2(gl_FragCoord.xy);
   int W = int(u_work.x);
-  float yd = 0.0, yc = 0.0, wy = 0.0;
-  vec2 cd = vec2(0.0), cc = vec2(0.0), wc = vec2(0.0);
-  float ys = 0.0, ws = 0.0;
-  float sI = 1.0 / (2.0 * u_sigI * u_sigI), sQ = 1.0 / (2.0 * u_sigQ * u_sigQ);
+  float yd = 0.0, yc = 0.0, ys = 0.0;
+  vec2 cd = vec2(0.0), cc = vec2(0.0);
+  // Subcarrier at the first tap, then rotated one working pixel per tap.
+  float ph0 = carrierPhase(float(ij.x - u_radius));
+  vec2 rot = vec2(cos(ph0), sin(ph0));
+  float dph = TAU * ${FSC} / u_unit;
+  vec2 step1 = vec2(cos(dph), sin(dph));
   for (int i = 0; i < 257; i++) {
-    int k = i - u_radius;
-    if (k > u_radius) break;
-    int x = ij.x + k;
+    if (i > 2 * u_radius) break;
+    int x = ij.x - u_radius + i;
     // Outside the active line the signal sits above white (gives effect.app's bright, fringed edges).
     float comp = 1.6, yClean = 1.6;
     vec2 iqClean = vec2(0.0);
@@ -99,28 +101,17 @@ void main() {
       yClean = (e.y - 0.25) * 2.0;
       iqClean = vec2((e.z - 0.5) / 0.8, (e.w - 0.5) / 0.9);
     }
-    float ph = carrierPhase(float(ij.x + k));
-    float fk = float(k);
-    // Luma: Lanczos-windowed sinc (sharp cutoff below the subcarrier, with some ringing).
-    if (abs(fk) <= u_lumaHalf) {
-      float h = 2.0 * u_lumaCut * sinc(2.0 * u_lumaCut * fk) * sinc(fk / (u_lumaHalf + 1.0));
-      yd += h * comp; yc += h * yClean; wy += h;
-    }
-    // Chroma: demodulate, gaussian low-pass.
-    vec2 g = exp(-fk * fk * vec2(sI, sQ));
-    cd += g * comp * 2.0 * vec2(cos(ph), sin(ph));
-    cc += g * iqClean;
-    wc += g;
-    // Smear: one-sided exponential tail of the clean luma (taps on the upstream side).
-    if (u_smearTau != 0.0 && fk * u_smearTau <= 0.0) {
-      float s = exp(-abs(fk) / abs(u_smearTau));
-      ys += s * yClean; ws += s;
-    }
+    vec4 w = texelFetch(u_taps, ivec2(i, 0), 0);
+    yd += w.x * comp;
+    yc += w.x * yClean;
+    cd += w.yz * comp * 2.0 * rot;   // demodulate (I with cos, Q with sin)
+    cc += w.yz * iqClean;
+    ys += w.w * yClean;
+    rot = vec2(rot.x * step1.x - rot.y * step1.y, rot.y * step1.x + rot.x * step1.y);
   }
-  yd /= wy; yc /= wy; cd /= wc; cc /= wc;
   float y = yc + u_fringes * (yd - yc);
   vec2 iq = cc + u_encoding * (cd - cc);
-  if (ws > 0.0) y = mix(y, ys / ws, min(1.0, abs(u_smearTau) / (8.0 * u_unit)));
+  y = mix(y, ys, u_smearMix);
   fragColor = vec4(y * 0.5 + 0.25, iq.x * 0.8 + 0.5, iq.y * 0.9 + 0.5, 1.0);
 }`,
     main: /* glsl */ `
@@ -141,27 +132,17 @@ void main() {
     const W = Math.max(8, Math.round((ctx.width * workLong) / long));
     const H = Math.max(8, Math.min(ctx.height, MAX_ROWS));
     const common = { u_unit: unit, u_work: [W, H] as [number, number] };
-    const enc = ctx.pass('encode', { width: W, height: H, uniforms: common });
-    const lumaHalf = Math.max(1, num(p, 'ringing') * unit);
-    // Chroma bandwidths: higher = sharper (effect.app's Q is sharper than I at 11 vs 8).
-    const sigI = Math.max(0.3, (40 / Math.max(0.5, num(p, 'color1'))) * unit);
-    const sigQ = Math.max(0.3, (40 / Math.max(0.5, num(p, 'color2'))) * unit);
-    const smear = num(p, 'smear');
-    const smearTau = smear * 40 * unit; // ±8 reference px at the ends of the range
-    const radius = Math.min(128, Math.ceil(Math.max(lumaHalf, 3 * Math.max(sigI, sigQ), Math.abs(smearTau) * 3)));
+    const footprint = ctx.width / W;
+    const src = footprint > 1.5 ? ctx.blur(ctx.input, footprint * 0.4, 0) : ctx.input;
+    const enc = ctx.pass('encode', { width: W, height: H, inputs: { u_src: src }, uniforms: common });
+    if (src !== ctx.input) ctx.release(src);
+    const f = filterTaps(num(p, 'ringing'), num(p, 'color1'), num(p, 'color2'), num(p, 'smear'), unit);
+    const taps = ctx.cached(`ntsc-taps:${f.key}`, () => textureFromFloat(ctx.gl, f.data, f.data.length / 4, 1, { nearest: true }), (t) => t.dispose());
     const dec = ctx.pass('decode', {
       width: W,
       height: H,
-      inputs: { u_enc: enc },
-      uniforms: {
-        ...common,
-        u_radius: radius,
-        u_lumaHalf: lumaHalf,
-        u_lumaCut: (FSC * 0.75) / unit,
-        u_sigI: sigI,
-        u_sigQ: sigQ,
-        u_smearTau: smearTau,
-      },
+      inputs: { u_enc: enc, u_taps: taps },
+      uniforms: { ...common, u_radius: f.radius, u_smearMix: f.smearMix },
     });
     ctx.release(enc);
     const out = ctx.pass('main', { inputs: { u_dec: dec } });
@@ -169,3 +150,39 @@ void main() {
     return out;
   },
 };
+
+const sinc = (x: number) => (Math.abs(x) < 1e-6 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x));
+
+/**
+ * Decoder FIR taps (RGBA per tap, each channel normalized to sum 1):
+ * luma = Lanczos-windowed sinc cut at 0.75 × subcarrier, half-length `ringing` reference px;
+ * I / Q = gaussians, sigma = 40 / color reference px (higher = more chroma detail);
+ * smear = one-sided exponential tail (±8 reference px at the ends of the range).
+ */
+function filterTaps(ringing: number, color1: number, color2: number, smear: number, unit: number) {
+  const lumaHalf = Math.max(1, ringing * unit);
+  const cut = (FSC * 0.75) / unit;
+  const sigI = Math.max(0.3, (40 / Math.max(0.5, color1)) * unit);
+  const sigQ = Math.max(0.3, (40 / Math.max(0.5, color2)) * unit);
+  const tau = smear * 40 * unit;
+  const radius = Math.min(128, Math.ceil(Math.max(lumaHalf, 3 * Math.max(sigI, sigQ), Math.abs(tau) * 3)));
+  const n = 2 * radius + 1;
+  const data = new Float32Array(n * 4);
+  const sums = [0, 0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    const k = i - radius;
+    const w = [
+      Math.abs(k) <= lumaHalf ? 2 * cut * sinc(2 * cut * k) * sinc(k / (lumaHalf + 1)) : 0,
+      Math.exp((-k * k) / (2 * sigI * sigI)),
+      Math.exp((-k * k) / (2 * sigQ * sigQ)),
+      tau !== 0 && k * tau <= 0 ? Math.exp(-Math.abs(k) / Math.abs(tau)) : 0,
+    ];
+    for (let c = 0; c < 4; c++) {
+      data[i * 4 + c] = w[c];
+      sums[c] += w[c];
+    }
+  }
+  for (let i = 0; i < n; i++) for (let c = 0; c < 4; c++) if (sums[c] !== 0) data[i * 4 + c] /= sums[c];
+  const key = [ringing, color1, color2, smear, unit.toFixed(4)].join(',');
+  return { data, radius, smearMix: Math.min(1, Math.abs(smear) / 0.2), key };
+}

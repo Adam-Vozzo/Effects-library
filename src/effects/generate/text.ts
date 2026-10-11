@@ -4,6 +4,12 @@ import { BLEND_OPTIONS, angle, bool, choice, color, flag, float, num, point } fr
 import { isFontReady, loadFont } from '../../ui/fonts';
 
 const WEIGHTS = ['Thin', 'Extra Light', 'Light', 'Regular', 'Medium', 'Semi Bold', 'Bold', 'Extra Bold', 'Black'];
+/** Largest raster (pixels) for one text block; beyond this the raster is scaled down (huge text at 16K). */
+const MAX_RASTER_PIXELS = 64e6;
+
+/** Bumped whenever a web font finishes loading, so cached rasters made with a fallback font are rebuilt. */
+let fontGeneration = 0;
+if (typeof document !== 'undefined') document.addEventListener('fontloaded', () => fontGeneration++);
 
 interface TextRaster {
   tex: Texture;
@@ -23,7 +29,7 @@ function genericFamily(name: string): string {
  * Rasterize the text block with Canvas 2D: fill coverage in R, stroke coverage in G (black, opaque background so
  * the browser's alpha un-premultiply cannot disturb the channels). Only the ink bounding box is allocated.
  */
-function rasterize(gl: WebGL2RenderingContext, p: ParamValues, fontPx: number, strokePx: number): TextRaster | null {
+function rasterize(gl: WebGL2RenderingContext, p: ParamValues, fontPx: number, strokePx: number, frac: [number, number]): TextRaster | null {
   const text = String(p.text ?? '');
   if (!text.trim() || fontPx < 0.5) return null;
   const family = String(p.font || 'Instrument Serif');
@@ -72,14 +78,16 @@ function rasterize(gl: WebGL2RenderingContext, p: ParamValues, fontPx: number, s
   if (!(x1 > x0 && y1 > y0)) return null;
   // Rotation pivot: center of the ink box.
   const pivot: [number, number] = [(x0 + x1) / 2, (y0 + y1) / 2];
-  x0 -= pad;
-  y0 -= pad;
+  // Snap the raster to the output pixel grid (frac = sub-pixel part of the anchor) so unrotated text maps
+  // texel-to-pixel and stays crisp.
+  x0 = Math.floor(frac[0] + x0 - pad) - frac[0];
+  y0 = Math.floor(frac[1] + y0 - pad) - frac[1];
   x1 += pad;
   y1 += pad;
   // Raster at render resolution unless it would exceed the GPU limit.
-  const s = Math.min(1, maxTex / (x1 - x0), maxTex / (y1 - y0));
-  const cw = Math.max(1, Math.ceil((x1 - x0) * s));
-  const ch = Math.max(1, Math.ceil((y1 - y0) * s));
+  const s = Math.min(1, maxTex / (x1 - x0), maxTex / (y1 - y0), Math.sqrt(MAX_RASTER_PIXELS / ((x1 - x0) * (y1 - y0))));
+  const cw = Math.min(maxTex, Math.max(1, Math.ceil((x1 - x0) * s)));
+  const ch = Math.min(maxTex, Math.max(1, Math.ceil((y1 - y0) * s)));
   const canvas = new OffscreenCanvas(cw, ch);
   const c = canvas.getContext('2d')!;
   c.fillStyle = '#000';
@@ -165,10 +173,16 @@ void main() {
   render(ctx) {
     const p = ctx.params;
     const family = String(p.font || 'Instrument Serif');
+    // loadFont is idempotent; the app re-renders on 'fontloaded' and the generation in the key rebuilds the raster.
+    if (typeof document !== 'undefined') void loadFont(family);
     const ready = typeof document === 'undefined' || isFontReady(family);
-    if (!ready) void loadFont(family);
     const fontPx = num(p, 'size') * ctx.height;
     const strokePx = num(p, 'strokeWidth') * ctx.pxScale;
+    // Sub-pixel part of the anchor (x right, y down) in render px.
+    const pos = (p.position as [number, number]) ?? [0, 0];
+    const ax = (pos[0] * 0.5 + 0.5) * ctx.width;
+    const ay = (0.5 - pos[1] * 0.5) * ctx.height;
+    const frac: [number, number] = [Math.round((ax - Math.floor(ax)) * 16) / 16, Math.round((ay - Math.floor(ay)) * 16) / 16];
     const key = JSON.stringify([
       'text',
       p.text,
@@ -181,10 +195,12 @@ void main() {
       p.letterSpacing,
       Math.round(strokePx * 100),
       ready,
+      fontGeneration,
+      frac,
     ]);
     const raster = ctx.cached<TextRaster | null>(
       key,
-      () => (typeof OffscreenCanvas === 'undefined' ? null : rasterize(ctx.gl, p, fontPx, strokePx)),
+      () => (typeof OffscreenCanvas === 'undefined' ? null : rasterize(ctx.gl, p, fontPx, strokePx, frac)),
       (r) => r?.tex.dispose(),
     );
     if (!raster) return ctx.input;

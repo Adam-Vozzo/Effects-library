@@ -49,17 +49,23 @@ export const scatter: EffectDef = {
   uniforms(p, { width }) {
     const cell = width / Math.max(2, num(p, 'density'));
     const diam = DIAM * num(p, 'size') * Math.max(num(p, 'minSize'), num(p, 'maxSize')) * (1 + num(p, 'widthVariance'));
-    const shadow = num(p, 'shadowOpacity') > 0 ? diam * (num(p, 'shadowDistance') + 0.5 * num(p, 'shadowSpread') + 0.5 * num(p, 'shadowBlur')) : 0;
-    const reach = diam * 0.5 * 1.15 + 0.75 * num(p, 'spread') + shadow;
+    const shadowK = num(p, 'shadowOpacity') > 0 ? num(p, 'shadowDistance') + 0.5 * num(p, 'shadowSpread') + 0.5 * num(p, 'shadowBlur') : 0;
+    const jitter = 0.75 * num(p, 'spread');
+    // Reach of a sprite (+ shadow) in cells; sprites too big for the gather window are capped instead of clipped.
+    const perDiam = 0.5 * 1.15 * (1 + num(p, 'widthVariance')) + shadowK;
+    const maxDiam = Math.max(0.1, (SEARCH_MAX - jitter) / perDiam);
+    const reach = Math.min(diam, maxDiam) * perDiam + jitter;
     return {
       u_cellPx: cell,
       u_search: Math.min(SEARCH_MAX, Math.ceil(reach + 0.01)),
+      u_maxDiam: maxDiam,
     };
   },
   shaders: {
     main: /* glsl */ `
 uniform float u_cellPx;
 uniform float u_search;
+uniform float u_maxDiam;
 
 struct Sprite { vec2 pos; float diam; float rot; float sx; int shape; float z; vec2 src; float vary; };
 
@@ -119,7 +125,7 @@ Sprite makeSprite(vec2 c) {
   vec3 col = texture(u_input, srcPx / u_resolution).rgb;
   float sim = 1.0 - length(col - u_keyColor) / 1.7320508;
   float f = saturate((sim - (1.0 - u_threshold)) / max(u_threshold, 1e-3));
-  s.diam = ${DIAM} * u_size * mix(u_minSize, u_maxSize, f) * maskAt(srcPx);
+  s.diam = min(${DIAM} * u_size * mix(u_minSize, u_maxSize, f), u_maxDiam) * maskAt(srcPx);
   s.rot = (h.z - 0.5) * TAU * u_rotationVariance;
   s.sx = 1.0 + (h.w - 0.5) * 2.0 * u_widthVariance;
   s.shape = u_shape == 4 ? int(h2.x * 4.0) : u_shape;

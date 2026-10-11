@@ -1,6 +1,8 @@
-import type { EffectDef } from '../../engine/types';
+import type { EffectDef, ParamValues } from '../../engine/types';
 import { angle, blendMode, bool, choice, color, curve, float, texture } from '../helpers';
 import { CRACKLE_GLSL, DEFAULT_TEX_SIZE, FIT_GLSL, FIT_OPTIONS } from './shared';
+
+const keyOn = (p: ParamValues) => !!p.key;
 
 /**
  * Blend a texture layer over the image: blend modes, Photoshop-style "blend if" ramps, chroma key, track matte.
@@ -23,10 +25,10 @@ export const layerMix: EffectDef = {
     curve('thisLayer', 'This layer', [[0, 1], [1, 1]], { group: 'Blend' }),
     curve('underlyingLayer', 'Underlying layer', [[0, 1], [1, 1]], { group: 'Blend' }),
     bool('key', 'Key', false, { group: 'Key' }),
-    color('keyColor', 'key color', '#00c745', { group: 'Key' }),
-    float('tolerance', 'tolerance', 0, 1, 0.05, 0.01, { group: 'Key' }),
-    float('softness', 'softness', 0, 0.5, 0.1, 0.01, { group: 'Key' }),
-    float('despill', 'despill', 0, 1, 1, 0.01, { group: 'Key' }),
+    color('keyColor', 'key color', '#00c745', { group: 'Key', visibleIf: keyOn }),
+    float('tolerance', 'tolerance', 0, 1, 0.05, 0.01, { group: 'Key', visibleIf: keyOn }),
+    float('softness', 'softness', 0, 0.5, 0.1, 0.01, { group: 'Key', visibleIf: keyOn }),
+    float('despill', 'despill', 0, 1, 1, 0.01, { group: 'Key', visibleIf: keyOn }),
     choice('matte', 'Matte', ['None', 'Alpha', 'Luma'], 0, 'select', { group: 'Matte' }),
     bool('invertMatte', 'Invert matte', false, { group: 'Matte' }),
   ],

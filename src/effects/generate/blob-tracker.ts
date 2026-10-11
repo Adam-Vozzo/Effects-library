@@ -7,7 +7,8 @@ const MAX_BLOBS = 32;
 const MIN_SPACING = 0.07;
 /** Analysis grid (long side): fixed relative to the image so detection is identical at any render size. */
 const ANALYSIS = 256;
-const GLYPHS = '0123456789 .:#-xyIDB';
+/** Caption glyphs: blob number and centre coordinates. */
+const GLYPHS = '0123456789 ';
 
 /** Box blend options; 'Default' = normal alpha compositing, 'Invert' inverts what lies under the overlay. */
 const BOX_BLENDS = ['Default', 'Add', 'Screen', 'Multiply', 'Overlay', 'Difference', 'Exclusion', 'Invert'];
@@ -88,7 +89,7 @@ function findBlobs(mask: Uint8Array, w: number, h: number): Blob[] {
 function detect(sim: Float32Array, w: number, h: number, threshold: number): Blob[] {
   const mask = new Uint8Array(w * h);
   const minArea = 10 / (w * h);
-  const maxArea = 0.3;
+  const maxArea = 0.45;
   const out: Blob[] = [];
   const iou = (a: Blob, b: Blob) => {
     const ix = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
@@ -126,7 +127,8 @@ interface Atlas {
 
 function buildAtlas(gl: WebGL2RenderingContext, cellH: number): Atlas | null {
   if (typeof OffscreenCanvas === 'undefined') return null;
-  const font = `600 ${Math.round(cellH * 0.8)}px "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace`;
+  // System monospace only, so captions never depend on web fonts loading.
+  const font = `600 ${Math.round(cellH * 0.8)}px ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace`;
   const m = new OffscreenCanvas(1, 1).getContext('2d')!;
   m.font = font;
   const cellW = Math.ceil(m.measureText('0').width + cellH * 0.04);

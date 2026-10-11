@@ -1,9 +1,10 @@
 import type { EffectDef, ParamValues } from '../../engine/types';
+import type { Texture } from '../../engine/gl';
 import { bool, choice, float, int, num } from '../helpers';
 import { mulberry32 } from './common-a';
 
-// A real (GPU) baseline JPEG round trip: RGB → YCbCr → 8×8 DCT → quantization → (corruption) →
-// dequantization → inverse DCT → RGB. One "JPEG pixel" is `Block size` reference px, so blocks keep
+// A real (GPU) baseline JPEG round trip: RGB → YCbCr (4:2:0 chroma) → 8×8 DCT → quantization →
+// (corruption) → dequantization → inverse DCT → RGB. One "JPEG pixel" is `Block size` reference px, so blocks keep
 // their size relative to the image at any render resolution; decoding evaluates the inverse DCT at the
 // continuous position inside each block (an upscaled JPEG, not a pixelated one).
 
@@ -87,7 +88,7 @@ function corruptionEvents(p: ParamValues): { ev: Float32Array; ev2: Float32Array
     const pos = a + (b - a) * rnd();
     const big = rnd() < 0.3 ? 2 : 1;
     ev.set([pos, (rnd() * 2 - 1) * 26 * big, (rnd() * 2 - 1) * 20 * big, (rnd() * 2 - 1) * 20 * big], i * 4);
-    const shift = rnd() < 0.55 ? Math.round((rnd() * 2 - 1) * 7) : 0;
+    const shift = rnd() < 0.55 ? Math.round((rnd() * 2 - 1) * 4) : 0; // MCUs
     ev2.set([shift, rnd() * 1000, 0, 0], i * 4);
   }
   return { ev, ev2, count };
@@ -178,6 +179,7 @@ uniform int u_evCount;
 uniform vec2 u_region;
 uniform float u_keepAc;
 uniform float u_garbage;
+uniform float u_shiftMul; // blocks per MCU column in this plane (luma 2, 4:2:0 chroma 1)
 const int ZZ[64] = int[](${RASTER_TO_ZZ.join(', ')});
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
@@ -196,7 +198,7 @@ void main() {
       if (e >= u_evCount) break;
       if (u_ev[e].x <= fk) {
         dc += u_ev[e].yzw;
-        shift += int(u_ev2[e].x);
+        shift += int(u_ev2[e].x * u_shiftMul);
         hitSeed = max(hitSeed, u_ev2[e].y);
       }
     }
@@ -221,9 +223,10 @@ void main() {
     // Inverse DCT along rows, evaluated at each render column (continuous position inside the block).
     idctH: /* glsl */ `${COMMON}
 uniform sampler2D u_src;
+uniform float u_rowScale; // render px per column of this pass (1, or more for huge exports)
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
-  float xj = (float(p.x) + 0.5) / u_jp;
+  float xj = (float(p.x) + 0.5) * u_rowScale / u_jp;
   float bx = floor(xj / 8.0);
   float xl = xj - bx * 8.0 - 0.5;
   vec3 s = vec3(0.0);
@@ -233,31 +236,52 @@ void main() {
   }
   fragColor = vec4(0.5 * s, 1.0);
 }`,
-    // Inverse DCT along columns at each render pixel, level shift, YCbCr → RGB.
+    // Inverse DCT along columns at each render pixel (luma plane + 4:2:0 chroma plane), YCbCr → RGB.
     main: /* glsl */ `${COMMON}
-uniform sampler2D u_rows;
+uniform sampler2D u_rows;   // luma, W × Hp
+uniform sampler2D u_rowsC;  // chroma, W × Hc
 uniform sampler2D u_coef;
-void main() {
-  ivec2 p = ivec2(gl_FragCoord.xy);
-  float yj = (u_outSize.y - gl_FragCoord.y) / u_jp;
+uniform sampler2D u_coefC;
+uniform vec2 u_csize;       // chroma plane size
+vec3 idctCol(sampler2D rows, float jp) {
+  float yj = (u_outSize.y - gl_FragCoord.y) / jp;
   float by = floor(yj / 8.0);
   float yl = yj - by * 8.0 - 0.5;
+  // Row results are sampled at exact row centers; horizontally exact (or interpolated if reduced).
+  vec2 rs = vec2(textureSize(rows, 0));
+  float u = gl_FragCoord.x / u_outSize.x;
+  vec3 s = vec3(0.0);
+  for (int v = 0; v < 8; v++) {
+    vec3 R = texture(rows, vec2(u, (by * 8.0 + float(v) + 0.5) / rs.y)).rgb;
+    s += (v == 0 ? 0.70710678 : 1.0) * R * cos((2.0 * yl + 1.0) * float(v) * PI / 16.0);
+  }
+  return 0.5 * s;
+}
+// Raw coefficient planes (DC shows the block average, AC around mid gray).
+vec3 rawCoef(sampler2D coef, float jp, vec2 size) {
+  vec2 j = floor(vec2(gl_FragCoord.x, u_outSize.y - gl_FragCoord.y) / jp);
+  return texelFetch(coef, ivec2(min(j, size - 1.0)), 0).rgb / 8.0;
+}
+void main() {
   vec3 ycc;
   if (u_stageIdct) {
-    vec3 s = vec3(0.0);
-    for (int v = 0; v < 8; v++) {
-      vec3 R = texelFetch(u_rows, ivec2(p.x, int(by) * 8 + v), 0).rgb;
-      s += (v == 0 ? 0.70710678 : 1.0) * R * cos((2.0 * yl + 1.0) * float(v) * PI / 16.0);
-    }
-    ycc = 0.5 * s;
+    ycc = vec3(idctCol(u_rows, u_jp).r, idctCol(u_rowsC, u_jp * 2.0).gb);
   } else {
-    // Raw coefficient planes (DC shows the block average, AC around mid gray).
-    vec2 j = floor(vec2((gl_FragCoord.x) / u_jp, yj));
-    ycc = texelFetch(u_coef, ivec2(min(j, u_jsize - 1.0)), 0).rgb / 8.0;
+    ycc = vec3(rawCoef(u_coef, u_jp, u_jsize).r, rawCoef(u_coefC, u_jp * 2.0, u_csize).gb);
   }
   ycc = (ycc + 128.0) / 255.0;
   vec3 rgb = u_stageYcc ? ycbcr2rgb(ycc) : ycc;
   fragColor = vec4(saturate(rgb), texture(u_input, v_uv).a);
+}`,
+    // 4:2:0 chroma: average 2×2 JPEG pixels of the full plane.
+    downC: /* glsl */ `
+uniform sampler2D u_src;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy) * 2;
+  ivec2 m = textureSize(u_src, 0) - 1;
+  vec3 c = texelFetch(u_src, min(p, m), 0).rgb + texelFetch(u_src, min(p + ivec2(1, 0), m), 0).rgb
+         + texelFetch(u_src, min(p + ivec2(0, 1), m), 0).rgb + texelFetch(u_src, min(p + ivec2(1, 1), m), 0).rgb;
+  fragColor = vec4(c * 0.25, 1.0);
 }`,
     // Fallback without float render targets: blocky DC-only approximation.
     fallback: /* glsl */ `${COMMON}
@@ -292,21 +316,36 @@ void main() {
       u_evCount: ev.count,
       u_region: [a, b],
       u_keepAc: Math.round(64 * (1 - num(p, 'detailLoss') / 100)),
-      u_garbage: (num(p, 'corruption') / 100) * 0.15,
+      u_garbage: (num(p, 'corruption') / 100) * 0.08,
     };
     if (ctx.format !== 'rgba16f') return ctx.pass('fallback', { uniforms });
     const f = 'rgba16f' as const;
+    // Encode / corrupt / dequantize one plane, then run the row pass of its inverse DCT.
+    // Row-IDCT results: one column per render px, or ≥ 4 per JPEG px when that is fewer (huge exports).
+    const rowsW = Math.min(W, Math.max(Math.ceil((4 * W) / jp), 1), 8192);
+    const plane = (src: Texture, w: number, h: number, pjp: number, shiftMul: number) => {
+      const u = { ...uniforms, u_jsize: [w, h], u_jp: pjp, u_shiftMul: shiftMul, u_rowScale: W / rowsW };
+      const rows = ctx.pass('dctH', { width: w, height: h, format: f, inputs: { u_src: src }, uniforms: u });
+      const quant = ctx.pass('dctV', { width: w, height: h, format: f, inputs: { u_src: rows }, uniforms: u });
+      ctx.release(rows);
+      const coef = ctx.pass('coef', { width: w, height: h, format: f, inputs: { u_src: quant }, uniforms: u });
+      ctx.release(quant);
+      const idrows = ctx.pass('idctH', { width: rowsW, height: h, format: f, inputs: { u_src: coef }, uniforms: u });
+      return { coef, idrows };
+    };
     const down = ctx.pass('down', { width: Wp, height: Hp, format: f, uniforms });
-    const rows = ctx.pass('dctH', { width: Wp, height: Hp, format: f, inputs: { u_src: down }, uniforms });
+    const Wc = Math.ceil(Wp / 16) * 8;
+    const Hc = Math.ceil(Hp / 16) * 8;
+    const downC = ctx.pass('downC', { width: Wc, height: Hc, format: f, inputs: { u_src: down } });
+    const luma = plane(down, Wp, Hp, jp, 2);
     ctx.release(down);
-    const quant = ctx.pass('dctV', { width: Wp, height: Hp, format: f, inputs: { u_src: rows }, uniforms });
-    ctx.release(rows);
-    const coef = ctx.pass('coef', { width: Wp, height: Hp, format: f, inputs: { u_src: quant }, uniforms });
-    ctx.release(quant);
-    const idrows = ctx.pass('idctH', { width: W, height: Hp, format: f, inputs: { u_src: coef }, uniforms });
-    const out = ctx.pass('main', { inputs: { u_rows: idrows, u_coef: coef }, uniforms });
-    ctx.release(idrows);
-    ctx.release(coef);
+    const chroma = plane(downC, Wc, Hc, jp * 2, 1);
+    ctx.release(downC);
+    const out = ctx.pass('main', {
+      inputs: { u_rows: luma.idrows, u_rowsC: chroma.idrows, u_coef: luma.coef, u_coefC: chroma.coef },
+      uniforms: { ...uniforms, u_csize: [Wc, Hc] },
+    });
+    for (const t of [luma.coef, luma.idrows, chroma.coef, chroma.idrows]) ctx.release(t);
     return out;
   },
 };

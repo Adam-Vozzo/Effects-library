@@ -1,6 +1,8 @@
 // Shared data + GLSL for the first half of the "Effects" category (JPEG glitch … Star glow).
 
 import { hexToRgb } from '../../engine/luts';
+import type { Texture } from '../../engine/gl';
+import type { RenderContext } from '../../engine/types';
 
 /** Deterministic PRNG for CPU-side randomness (quantization tables, glitch events). */
 export function mulberry32(seed: number): () => number {
@@ -18,6 +20,31 @@ const glslVec3 = (hex: string) => {
   const [r, g, b] = hexToRgb(hex);
   return `vec3(${r.toFixed(4)}, ${g.toFixed(4)}, ${b.toFixed(4)})`;
 };
+
+// ---------------------------------------------------------------- reduced-resolution work buffers
+
+/** 2× downsample (4 bilinear taps → 4×4 source px box); register as the effect's `down2` shader. */
+export const DOWN2_GLSL = /* glsl */ `
+uniform sampler2D u_src;
+void main() {
+  vec2 o = 1.0 / vec2(textureSize(u_src, 0));
+  fragColor = 0.25 * (texture(u_src, v_uv + vec2(-o.x, -o.y)) + texture(u_src, v_uv + vec2(o.x, -o.y))
+                    + texture(u_src, v_uv + vec2(-o.x, o.y)) + texture(u_src, v_uv + vec2(o.x, o.y)));
+}`;
+
+/**
+ * Halve `src` (via the effect's `down2` shader) until it is no larger than ~1.5× the requested size.
+ * Returns `src` itself when no reduction is needed; release the result only if it differs from `src`.
+ */
+export function downTo(ctx: RenderContext, src: Texture, w: number, h: number): Texture {
+  let cur = src;
+  while (cur.width > w * 1.5 && cur.height > h * 1.5 && cur.width > 2 && cur.height > 2) {
+    const next = ctx.pass('down2', { width: Math.ceil(cur.width / 2), height: Math.ceil(cur.height / 2), inputs: { u_src: cur } });
+    if (cur !== src) ctx.release(cur);
+    cur = next;
+  }
+  return cur;
+}
 
 // ---------------------------------------------------------------- riso inks
 

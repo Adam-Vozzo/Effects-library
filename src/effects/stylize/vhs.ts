@@ -75,7 +75,7 @@ void main() {
   vec2 uv = vec2(v_uv.x - dx, 1.0 - ySrc);
   vec4 c = texture(u_input, clamp(uv, 0.0, 1.0));
   vec3 yiq = rgb2yiq(c.rgb);
-  if (ySrc < 0.0) yiq = vec3(0.04 + 0.03 * hash12(vec2(gl_FragCoord.x * 0.25, L)), 0.0, 0.0);
+  if (ySrc < 0.0) yiq = vec3(0.04 + 0.03 * hash12(vec2(floor(v_uv.x * 400.0), L)), 0.0, 0.0);
   fragColor = vec4(yiq + vec3(0.0, 0.5, 0.5), c.a);
 }`,
     main: /* glsl */ `
@@ -135,7 +135,7 @@ void main() {
     Y += dash * (0.18 + 0.3 * h.w);
     iq += dash * vec2(0.13, 0.1);
   }
-  Y += tw * u_trackingNoise * 0.05 * (hash12(vec2(gl_FragCoord.x * 0.5, L + frame * 5.0)) - 0.5);
+  Y += tw * u_trackingNoise * 0.05 * (hash12(vec2(gl_FragCoord.x / max(samp * 0.5, 1.0), L + frame * 5.0)) - 0.5);
 
   // Head-switching band exposed by the vertical jump: dark with a bright line at its edge.
   float ySrc = yTop - jump;
@@ -163,13 +163,20 @@ void main() {
   render(ctx) {
     const p = ctx.params;
     const W = ctx.width;
-    const samp = W / Math.max(16, num(p, 'samples'));
-    const geo = ctx.pass('geom');
+    const H = ctx.height;
+    const samples = Math.max(16, num(p, 'samples'));
+    const samp = W / samples; // render px per luma sample
+    // The tape signal is band-limited: process it at ≤ 4 px per luma sample and 2 rows per line.
+    const ww = Math.min(W, Math.round(samples * 4));
+    const wh = Math.min(H, 960);
+    const sx = ww / W;
+    const sy = wh / H;
+    const geo = ctx.pass('geom', { width: ww, height: wh });
     const sl = num(p, 'softness') * samp * 1.4;
     const sc = samp * (2.2 + 1.5 * num(p, 'softness'));
-    const lumaB = ctx.blur(geo, sl, 0);
-    const chromaB = ctx.blur(geo, sc, sc * 0.12);
-    const chromaW = ctx.blur(geo, samp * 2.5, 0);
+    const lumaB = ctx.blur(geo, sl * sx, 0);
+    const chromaB = ctx.blur(geo, sc * sx, sc * 0.12 * sy);
+    const chromaW = ctx.blur(geo, samp * 2.5 * sx, 0);
     const out = ctx.pass('main', { inputs: { u_geo: geo, u_lumaB: lumaB, u_chromaB: chromaB, u_chromaW: chromaW } });
     ctx.release(geo);
     ctx.release(lumaB);
