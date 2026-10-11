@@ -16,7 +16,8 @@ import { DISTORT_GLSL } from './common';
 //  - Background keys pixels (by key color distance / lightness / saturation / edges) and blends
 //    the background color onto them.
 // Pass 1 averages lightness/saturation/edges per grid cell, then a 2x2 reduction pyramid gives the
-// average of every quadtree block; the main pass walks the quadtree per pixel.
+// averages (and the max merge metric) of every quadtree block; the main pass walks the quadtree
+// per pixel.
 
 const MAX_LEVELS = 8;
 const SOURCES = ['Lightness', 'Saturation', 'Edges'];
@@ -80,8 +81,8 @@ export const gridSplit: EffectDef = {
     color('bgKey', 'Background key color', '#ffffff', { group: 'Background' }),
   ],
   shaders: {
-    // Per-cell averages: r = lightness, g = saturation, b = edge density. Rows are stored top-down
-    // so the 2x2 pyramid groups cells the same way as the top-left anchored quadtree.
+    // Per-cell averages: r = lightness, g = saturation, b = edge density, a = merge metric. Rows are
+    // stored top-down so the 2x2 pyramid groups cells the same way as the top-left quadtree.
     metrics: /* glsl */ `
 uniform vec2 u_cells;
 uniform vec2 u_srcRes;
@@ -98,26 +99,34 @@ void main() {
       float l0 = luma(saturate(texture(u_input, uv + vec2(e.x, 0.0)).rgb)) - luma(saturate(texture(u_input, uv - vec2(e.x, 0.0)).rgb));
       float l1 = luma(saturate(texture(u_input, uv + vec2(0.0, e.y)).rgb)) - luma(saturate(texture(u_input, uv - vec2(0.0, e.y)).rgb));
       float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
-      acc += vec3(luma(c), mx > 1e-4 ? (mx - mn) / mx : 0.0, saturate(length(vec2(l0, l1)) * 4.0));
+      acc += vec3(luma(c), mx > 1e-4 ? (mx - mn) / mx : 0.0, saturate(length(vec2(l0, l1)) * 10.0));
     }
   }
-  fragColor = vec4(acc / 64.0, 1.0);
+  acc /= 64.0;
+  float m = u_mergeSource == 0 ? acc.r : (u_mergeSource == 1 ? acc.g : acc.b);
+  fragColor = vec4(acc, u_mergeInvert ? 1.0 - m : m);
 }`,
-    // 2x2 average of the previous pyramid level (only children inside the grid count).
+    // 2x2 reduction of the previous pyramid level (children inside the grid only): rgb = mean,
+    // a = max, so a block merges only when all of its cells are below the merge cutoff.
     reduce: /* glsl */ `
 uniform sampler2D u_prev;
 void main() {
   ivec2 sz = textureSize(u_prev, 0);
   ivec2 p = ivec2(gl_FragCoord.xy) * 2;
-  vec4 acc = vec4(0.0);
-  float n = 0.0;
+  vec3 acc = vec3(0.0);
+  float mx = 0.0, n = 0.0;
   for (int j = 0; j < 2; j++) {
     for (int i = 0; i < 2; i++) {
       ivec2 q = p + ivec2(i, j);
-      if (q.x < sz.x && q.y < sz.y) { acc += texelFetch(u_prev, q, 0); n += 1.0; }
+      if (q.x < sz.x && q.y < sz.y) {
+        vec4 t = texelFetch(u_prev, q, 0);
+        acc += t.rgb;
+        mx = max(mx, t.a);
+        n += 1.0;
+      }
     }
   }
-  fragColor = acc / max(n, 1.0);
+  fragColor = vec4(acc / max(n, 1.0), mx);
 }`,
     main: /* glsl */ `
 ${DISTORT_GLSL}
@@ -180,17 +189,15 @@ void main() {
   vec2 pc = vec2(v_uv.x, 1.0 - v_uv.y) * u_cells; // pixel in cell units, y down
   float seed = u_seed;
   vec2 strength = vec2(u_irrStrength.x, u_irrStrength.y);
-  vec2 lo = vec2(0.0), hi = vec2(exp2(float(u_levels)));
-  vec2 b = vec2(0.0);
+  // Quadtree roots of 2^levels cells tile the grid (levels is capped, so there may be several).
+  float top = exp2(float(u_levels));
+  vec2 b = floor(pc / top);
+  vec2 lo = b * top, hi = lo + top;
   int leaf = 0;
   for (int L = ${MAX_LEVELS}; L >= 1; L--) {
     if (L > u_levels) continue;
     vec4 m = blockMetric(L, b);
-    if (L <= int(u_mergeDepth + 0.5) && u_mergeCutoff > 0.0) {
-      float mm = pick(m, u_mergeSource);
-      if (u_mergeInvert) mm = 1.0 - mm;
-      if (mm < u_mergeCutoff) { leaf = L; break; }
-    }
+    if (L <= int(u_mergeDepth + 0.5) && m.a < u_mergeCutoff) { leaf = L; break; }
     vec2 split = 0.5 * (lo + hi);
     if (strength.x + strength.y > 0.0) {
       float a = pick(m, u_irrSource);
@@ -224,12 +231,14 @@ void main() {
   // Tile transform: weight in [-1, 1] from the tile metric / noise.
   float r = mix(pick(tm, u_tileSource), noise01(cu, u_tileNoiseSize, u_tileNoiseSpeed, 9.0 + seed), u_tileNoise);
   float w = mix(1.0, 2.0 * r - 1.0, u_tileVariation);
-  vec2 q = (pc - tileC) / tileSize;                    // [-0.5, 0.5] in the tile, y down
-  q = vec2(q.x, -q.y);                                   // y up for the transform
+  // In output pixels (y up) so rotation stays isotropic; shift/stretch are relative to the tile.
+  vec2 flipY = vec2(1.0, -1.0);
+  vec2 tilePx = tileSize * cellPx;
+  vec2 q = (pc - tileC) * cellPx * flipY;
   q *= exp2(-u_uvStretch * w);
   q = rot2(-radians(u_tileRotation) * w) * q;
-  q += u_uvShift * w;
-  vec2 src = tileC + vec2(q.x, -q.y) * tileSize;
+  q += u_uvShift * w * tilePx;
+  vec2 src = tileC + q * flipY / cellPx;
   vec2 uv = vec2(src.x / u_cells.x, 1.0 - src.y / u_cells.y);
   vec4 col = textureLod(u_input, mirrorUv(uv), 0.0);
 
@@ -242,9 +251,9 @@ void main() {
     else if (u_bgSource == 2) { float mx = max(c.r, max(c.g, c.b)); k = mx > 1e-4 ? (mx - min(c.r, min(c.g, c.b))) / mx : 0.0; }
     else {
       vec2 e = vec2(max(u_pxScale, 1.0)) / u_resolution;
-      float gx = luma(texture(u_input, mirrorUv(uv + vec2(e.x, 0.0))).rgb) - luma(texture(u_input, mirrorUv(uv - vec2(e.x, 0.0))).rgb);
-      float gy = luma(texture(u_input, mirrorUv(uv + vec2(0.0, e.y))).rgb) - luma(texture(u_input, mirrorUv(uv - vec2(0.0, e.y))).rgb);
-      k = saturate(length(vec2(gx, gy)) * 4.0);
+      float gx = luma(textureLod(u_input, mirrorUv(uv + vec2(e.x, 0.0)), 0.0).rgb) - luma(textureLod(u_input, mirrorUv(uv - vec2(e.x, 0.0)), 0.0).rgb);
+      float gy = luma(textureLod(u_input, mirrorUv(uv + vec2(0.0, e.y)), 0.0).rgb) - luma(textureLod(u_input, mirrorUv(uv - vec2(0.0, e.y)), 0.0).rgb);
+      k = saturate(length(vec2(gx, gy)) * 10.0);
     }
     k = mix(k, noise01(uvToUnit(v_uv), u_bgNoiseSize, u_bgNoiseSpeed, 13.0 + seed), u_bgNoise);
     if (u_bgInvert) k = 1.0 - k;

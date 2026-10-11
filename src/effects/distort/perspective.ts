@@ -12,11 +12,11 @@ export const perspective: EffectDef = {
   keywords: 'distortion geometric perspective photo transform warp',
   params: [
     float('zoom', 'camera zoom', -5, 5, 0.17),
-    float('fov', 'field of view', 10, 170, 60),
+    float('fov', 'field of view', 10, 170, 60, 0.01, { unit: '°' }),
     point('camera', 'camera position', [0, 0], { min: [-2, -2], max: [2, 2] }),
-    float('rotateX', 'rotate X', -90, 90, -25),
-    float('rotateY', 'rotate Y', -90, 90, 0),
-    float('rotateZ', 'rotate Z', -90, 90, 0),
+    float('rotateX', 'rotate X', -90, 90, -25, 0.01, { unit: '°' }),
+    float('rotateY', 'rotate Y', -90, 90, 0, 0.01, { unit: '°' }),
+    float('rotateZ', 'rotate Z', -90, 90, 0, 0.01, { unit: '°' }),
     color('bgColor', 'background color', '#000000'),
     float('bgOpacity', 'background opacity', 0, 1, 0),
     bool('depthAlpha', 'depth-based alpha', false),
@@ -51,14 +51,12 @@ void main() {
   vec2 local = vec2(dot(hit, u_basis[0]), dot(hit, u_basis[1]));
   vec2 uv = unitToUv(local);
   vec2 dx = dFdx(uv), dy = dFdy(uv);
-  vec4 col = vec4(0.0);
-  if (t > 0.0) {
-    col = sampleWarp(u_input, uv, dx, dy);
-    col.a *= uvCoverage(uv, dx, dy);
-    if (u_depthAlpha) {
-      float a = saturate((-hit.z - u_depthKey) / max(u_depthRange, 1e-4));
-      col.a *= u_depthInvert ? 1.0 - a : a;
-    }
+  // Sample unconditionally (uniform control flow for the bicubic path), then mask.
+  vec4 col = sampleWarp(u_input, uv, dx, dy);
+  col.a *= uvCoverage(uv, dx, dy) * step(0.0, t);
+  if (u_depthAlpha) {
+    float a = saturate((-hit.z - u_depthKey) / max(u_depthRange, 1e-4));
+    col.a *= u_depthInvert ? 1.0 - a : a;
   }
   fragColor = overStraight(col, vec4(u_bgColor, u_bgOpacity));
 }`,

@@ -1,6 +1,6 @@
 import type { EffectDef } from '../../engine/types';
 import { angle, float, int, num } from '../helpers';
-import { DISTORT_GLSL } from './common';
+import { DISTORT_GLSL, loopTime } from './common';
 
 // Fluted / reeded glass. A periodic glass thickness profile T(u) (u = position across the reeds in
 // periods, `pattern repeats` reeds per image short side) refracts the image along the pattern
@@ -29,16 +29,8 @@ export const reededGlass: EffectDef = {
     float('imperfections', 'imperfections', 0, 1, 0.3),
     float('imperfectionsScale', 'imperfections scale', 0.2, 25, 10, 0.1),
   ],
-  uniforms: (p, ctx) => {
-    const speed = num(p, 'shiftSpeed');
-    const loop = num(p, 'shiftLoop');
-    let shift = ctx.time * speed;
-    if (loop > 0 && speed > 0) {
-      const cycles = Math.max(1, Math.round(speed * loop));
-      shift = ((ctx.time / loop) % 1) * cycles;
-    }
-    return { u_shift: shift };
-  },
+  // The pattern period is 1, so the looping time coordinate doubles as a seamless shift.
+  uniforms: (p, ctx) => ({ u_shift: loopTime(ctx.time, num(p, 'shiftSpeed'), num(p, 'shiftLoop'))[0] }),
   shaders: {
     main: /* glsl */ `
 ${DISTORT_GLSL}
@@ -107,7 +99,7 @@ void main() {
     vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
     float spec = pow(max(dot(n, h), 0.0), 18.0 / (u_reflectionScale * u_reflectionScale));
     float fres = pow(1.0 - n.z, 1.5);
-    // Environment sheen: a blurred-looking, mirrored glimpse of the image along the normal.
+    // Environment sheen: a mirrored glimpse of the image, offset along the normal.
     vec2 ruv = mirrorUv(unitToUv(-p * 0.6 + n.xy * 1.5 * u_reflectionScale));
     vec3 env = textureLod(u_input, ruv, 0.0).rgb;
     vec3 add = vec3(spec) * 0.9 + env * fres * 1.6;

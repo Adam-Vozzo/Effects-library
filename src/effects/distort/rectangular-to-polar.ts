@@ -35,10 +35,10 @@ void main() {
   vec2 dx = vec2((d.x * ddx.y - d.y * ddx.x) * k, dFdx(v));
   vec2 dy = vec2((d.x * ddy.y - d.y * ddy.x) * k, dFdy(v));
   vec4 col = sampleWarp(u_input, uv, dx, dy);
-  if (o > 0.0 && x < o) {
+  if (o > 0.0) {
     // Fade the start of the source into its end (x + 1 - o) so the 12 o'clock seam disappears.
-    float w = smoothstep(0.0, 1.0, x / o);
-    col = mix(sampleWarp(u_input, vec2(x + 1.0 - o, uv.y), dx, dy), col, w);
+    vec4 wrap = sampleWarp(u_input, vec2(x + 1.0 - o, uv.y), dx, dy);
+    col = mix(wrap, col, smoothstep(0.0, 1.0, min(x / o, 1.0)));
   }
   fragColor = col;
 }`,
