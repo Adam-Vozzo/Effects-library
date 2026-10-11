@@ -8,10 +8,10 @@ export const DEFAULT_TEX_SIZE = 1024;
 
 export const FIT_GLSL = /* glsl */ `
 // Output uv -> texture uv. fit: 0 Fill (cover), 1 Stretch, 2 Tile (contain, repeated).
-// zoom > 1 enlarges the texture, reps > 1 repeats it more often; rotation in degrees (counter-clockwise).
+// zoom > 1 enlarges the texture, reps > 1 repeats it more often; rotation in degrees (clockwise).
 vec2 fitTexUv(vec2 uv, vec2 res, vec2 texSize, int fit, float zoom, float reps, float rotDeg) {
   vec2 p = (uv - 0.5) * res;
-  p = rot2(-radians(rotDeg)) * p;
+  p = rot2(radians(rotDeg)) * p;
   p *= reps / max(zoom, 1e-4);
   if (fit == 1) return p / res + 0.5;
   vec2 r = res / texSize;

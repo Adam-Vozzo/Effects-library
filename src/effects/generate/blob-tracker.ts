@@ -4,7 +4,7 @@ import { bool, choice, color, float, int, num } from '../helpers';
 
 const MAX_BLOBS = 32;
 /** Default cap: keeps the overlay readable; centres closer than MIN_SPACING (uv) are suppressed. */
-const MIN_SPACING = 0.045;
+const MIN_SPACING = 0.07;
 /** Analysis grid (long side): fixed relative to the image so detection is identical at any render size. */
 const ANALYSIS = 256;
 const GLYPHS = '0123456789 .:#-xyIDB';
@@ -340,6 +340,8 @@ void main() {
     else if (cp == 6) cmin = vec2(bb.z - th - cw, bb.w - th - chh);
     else if (cp == 7) cmin = vec2(bb.x + th, bb.y + th);
     else if (cp == 8) cmin = vec2((bb.x + bb.z - cw) * 0.5, (bb.y + bb.w - chh) * 0.5);
+    // Keep captions on the canvas.
+    if (cp > 0) cmin = clamp(cmin, vec2(0.0), max(u_resolution - vec2(cw, chh), vec2(0.0)));
     float pad = th + u_centerSize * s * 2.0 + 2.0;
     bool nearBox = px.x > bb.x - pad && px.x < bb.z + pad && px.y > bb.y - pad && px.y < bb.w + pad;
     bool inCap = cp > 0 && px.x >= cmin.x && px.x <= cmin.x + cw && px.y >= cmin.y && px.y <= cmin.y + chh;

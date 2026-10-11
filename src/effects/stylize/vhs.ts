@@ -12,7 +12,8 @@ const float LINES = 480.0;
 float vhsJump() {
   float k = floor(u_time * 0.37);
   float burst = smoothstep(0.88, 0.94, fract(u_time * 0.37)) * (1.0 - smoothstep(0.96, 1.0, fract(u_time * 0.37)));
-  return u_verticalJump * (0.28 + 2.5 * burst * hash11(k + 0.5));
+  // Resting offset saturates at 6 % of the frame; bursts make the picture jump further for a moment.
+  return 0.06 * (1.0 - exp(-u_verticalJump * 4.7)) + u_verticalJump * 0.12 * burst * hash11(k + 0.5);
 }
 float trackingCenter() { return fract(0.5 + u_time * 0.071); }
 float creaseCenter() { return fract(0.965 + u_time * 0.043); }

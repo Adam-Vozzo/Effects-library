@@ -27,7 +27,7 @@ void main() {
   // Grain frame: static when speed = 0, otherwise a new pattern 'speed' times per second.
   float frame = u_speed > 0.0 ? floor(u_time * u_speed) : 0.0;
   // Grain cells smaller than a pixel average out: shrink the amplitude instead of aliasing.
-  float cellPx = u_size * u_pxScale;
+  float cellPx = u_size * 1.4 * u_pxScale;
   vec2 p = gl_FragCoord.xy / max(cellPx, 1.0) - 0.5;
   float aa = min(cellPx, 1.0);
   vec3 seed = vec3(17.0, 5.0, 11.0) * mod(frame, 997.0);

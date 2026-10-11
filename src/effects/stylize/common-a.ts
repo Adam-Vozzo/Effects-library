@@ -74,6 +74,12 @@ vec3 risoInk(int i) { return RISO_INKS[clamp(i, 0, ${RISO_INKS.length - 1})]; }
 
 /** Soft threshold with a quadratic knee (bright-pass of bloom-like effects), input linear RGB. */
 export const KNEE_GLSL = /* glsl */ `
+float kneeWeight(float br, float threshold, float knee) {
+  float k = max(knee, 1e-4);
+  float rq = clamp(br - threshold + k, 0.0, 2.0 * k);
+  rq = rq * rq / (4.0 * k);
+  return max(max(rq, br - threshold) / max(br, 1e-4), 0.0);
+}
 vec3 kneeThreshold(vec3 c, float threshold, float knee) {
   float br = max(max(c.r, c.g), c.b);
   float k = max(knee, 1e-4);

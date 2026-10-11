@@ -32,18 +32,20 @@ export const textureBlur: EffectDef = {
     bool('previewTexture', 'Preview texture', false),
   ],
   shaders: {
-    // Full res -> half res, linear light with highlight boost.
+    // Full res -> half res in linear light. Highlight boost = weighted blur: bright pixels get a larger weight
+    // (stored premultiplied, weight in alpha), so highlights bloom into their surroundings like bokeh while flat
+    // areas keep their brightness.
     prep: /* glsl */ `
 uniform vec2 u_srcTexel;
-vec3 boosted(vec2 uv) {
+vec4 weighted(vec2 uv) {
   vec3 c = srgbToLinear(texture(u_input, uv).rgb);
-  float h = smoothstep(0.45, 1.0, luma(c));
-  return c * (1.0 + u_highlightBoost * 6.0 * h * h);
+  float h = smoothstep(0.5, 1.0, luma(c));
+  float w = 1.0 + u_highlightBoost * 8.0 * h * h;
+  return vec4(c * w, w);
 }
 void main() {
   vec2 o = u_srcTexel;
-  vec3 c = boosted(v_uv + vec2(-o.x, -o.y)) + boosted(v_uv + vec2(o.x, -o.y)) + boosted(v_uv + vec2(-o.x, o.y)) + boosted(v_uv + o);
-  fragColor = vec4(c * 0.25, 1.0);
+  fragColor = 0.25 * (weighted(v_uv + vec2(-o.x, -o.y)) + weighted(v_uv + vec2(o.x, -o.y)) + weighted(v_uv + vec2(-o.x, o.y)) + weighted(v_uv + o));
 }`,
     down: /* glsl */ `
 uniform sampler2D u_src;
@@ -80,10 +82,11 @@ vec4 level(int k, vec2 uv) {
 ${levelSwitch}
   return textureBSpline(u_l1, uv);
 }
-vec3 boostedInput(vec2 uv) {
+vec4 weightedInput(vec2 uv) {
   vec3 c = srgbToLinear(texture(u_input, uv).rgb);
-  float h = smoothstep(0.45, 1.0, luma(c));
-  return c * (1.0 + u_highlightBoost * 6.0 * h * h);
+  float h = smoothstep(0.5, 1.0, luma(c));
+  float w = 1.0 + u_highlightBoost * 8.0 * h * h;
+  return vec4(c * w, w);
 }
 void main() {
   vec2 texSize = u_textureLoaded ? u_textureSize : vec2(${DEFAULT_TEX_SIZE}.0);
@@ -98,21 +101,18 @@ void main() {
   // Pyramid level with the matching sigma; below level 1 fade from the sharp input.
   float f = log2(max(sigma, 1e-4) / u_levelSigma);
   vec4 src = texture(u_input, v_uv);
-  vec3 c;
+  vec4 acc;
   if (f < 1.0) {
     float t = saturate(sigma / (u_levelSigma * 2.0));
-    c = mix(boostedInput(v_uv), level(1, v_uv).rgb, t);
+    acc = mix(weightedInput(v_uv), level(1, v_uv), t);
   } else {
     float lf = min(f, float(u_levels));
     int k = int(floor(lf));
-    vec3 a = level(k, v_uv).rgb;
-    vec3 b = k < u_levels ? level(k + 1, v_uv).rgb : a;
-    c = mix(a, b, lf - float(k));
+    vec4 a = level(k, v_uv);
+    vec4 b = k < u_levels ? level(k + 1, v_uv) : a;
+    acc = mix(a, b, lf - float(k));
   }
-  // Boosted highlights roll off smoothly instead of clipping.
-  c = linearToSrgb(c);
-  float knee = 1.0 - 0.25 * u_highlightBoost;
-  c = min(c, knee) + (1.0 - knee) * (1.0 - exp(-max(c - knee, 0.0) / max(1.0 - knee, 1e-4)));
+  vec3 c = linearToSrgb(acc.rgb / max(acc.a, 1e-4));
   fragColor = vec4(c, src.a);
 }`,
   },

@@ -29,17 +29,17 @@ void main() {
   int mode = int(u_textureMode + 0.5);
   // Paper relief displaces the scanned image by a fraction of a pixel (feature size = scale / 100 px).
   float fs = u_distortionScale / 100.0;
-  vec2 warp = vec2(fbm(p / fs, 3), fbm(p / fs + 37.0, 3)) * u_distortion * 2.5 * u_pxScale;
+  vec2 warp = vec2(fbm(p / fs, 3), fbm(p / fs + 37.0, 3)) * u_distortion * 1.1 * u_pxScale;
   vec4 src = texture(u_input, v_uv + warp / u_resolution);
   float t = paperTexture(p / u_texScale, mode);
-  vec3 tint = mode == 1 ? vec3(0.17, 0.145, 0.115) : vec3(0.15, 0.13, 0.13);
-  vec3 paper = tint + t * (mode == 1 ? 0.045 : 0.035);
+  vec3 tint = mode == 1 ? vec3(0.16, 0.14, 0.115) : vec3(0.14, 0.125, 0.125);
+  vec3 paper = tint + t * (mode == 1 ? 0.03 : 0.022);
   paper = (paper - tint) * u_contrast + tint + u_brightness * 0.5;
   paper = saturate(paper);
   vec3 c = saturate(src.rgb);
   vec3 scanned = 1.0 - (1.0 - c) * (1.0 - paper);
   // Faint unevenness in the paper white itself.
-  scanned *= 1.0 + t * 0.006 * u_contrast;
+  scanned *= 1.0 + t * 0.0025 * u_contrast;
   fragColor = vec4(mix(src.rgb, scanned, u_opacity), src.a);
 }`,
   },
