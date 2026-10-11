@@ -80,14 +80,14 @@ void main() {
     const passes = Math.min(MAX_PASSES, Math.ceil(Math.log2(frames)));
     const n = 2 ** passes;
     const shake = num(p, 'shake') * ctx.pxScale;
-    const seed = Math.floor(ctx.time * num(p, 'shakeSpeed') * 4);
+    const tShake = ctx.time * num(p, 'shakeSpeed');
     let acc: Texture = ctx.pass('bright');
     for (let i = 0; i < passes; i++) {
       const k = 2 ** i;
-      // Shake: random-walk spread over 2^i frames as two symmetric taps in a random direction
-      // (varies per pass and per shake tick).
+      // Shake: random-walk spread over 2^i frames as two symmetric taps in a direction that wanders
+      // smoothly with time × shake speed (different per pass).
       const j = shake * Math.sqrt(k);
-      const ang = hash(i * 7.13 + seed * 1.37) * Math.PI * 2;
+      const ang = smoothNoise(tShake + i * 17.3) * Math.PI * 4;
       const jx = j * Math.cos(ang);
       const jy = j * Math.sin(ang);
       const next = ctx.pass('accum', {
@@ -112,4 +112,12 @@ void main() {
 function hash(x: number): number {
   const s = Math.sin(x * 127.1 + 311.7) * 43758.5453;
   return s - Math.floor(s);
+}
+
+/** 1D value noise in [0, 1) with smoothstep interpolation. */
+function smoothNoise(x: number): number {
+  const i = Math.floor(x);
+  const f = x - i;
+  const u = f * f * (3 - 2 * f);
+  return hash(i) * (1 - u) + hash(i + 1) * u;
 }
