@@ -2002,7 +2002,7 @@ kbd {
   position: fixed;
   z-index: 70;
   left: 50%;
-  bottom: 96px;
+  top: 72px;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -2034,14 +2034,14 @@ kbd {
 
 .toast.is-leaving {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(-6px);
   transition: all 0.3s;
 }
 
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(-8px);
   }
 }
 

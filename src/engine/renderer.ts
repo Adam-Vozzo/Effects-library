@@ -229,6 +229,8 @@ export class Renderer {
   private renderBase(w: number, h: number, crop: Crop | null, format: TexFormat): Texture {
     const out = this.pool.acquire(w, h, format);
     const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
+    const [sw, sh] = this.sourceSize;
+    const magnify = w > c.w * sw * 1.01 || h > c.h * sh * 1.01;
     this.draw(this.coreProgram('base'), out, w, h, {
       u_src: this.source ?? this.dummy,
       u_crop: [c.x, 1 - c.y - c.h, c.w, c.h],
@@ -236,6 +238,7 @@ export class Renderer {
       u_rotation: (-(c.rotation ?? 0) * Math.PI) / 180,
       u_flip: [c.flipX ? -1 : 1, c.flipY ? -1 : 1],
       u_srcTopDown: this.sourceTopDown,
+      u_bicubic: magnify,
     });
     return out;
   }

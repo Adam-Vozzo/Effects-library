@@ -7,12 +7,15 @@ uniform vec4 u_crop;      // x, y (bottom-left origin), w, h in normalized sourc
 uniform float u_rotation; // radians, around the crop center
 uniform vec2 u_flip;
 uniform bool u_srcTopDown;
+uniform bool u_bicubic;
 void main() {
   vec2 srcSize = vec2(textureSize(u_src, 0));
   vec2 px = (v_uv - 0.5) * u_flip * u_crop.zw * srcSize;
   px = rot2(u_rotation) * px;
   vec2 uv = u_crop.xy + 0.5 * u_crop.zw + px / srcSize;
-  vec4 c = texture(u_src, u_srcTopDown ? vec2(uv.x, 1.0 - uv.y) : uv);
+  vec2 suv = u_srcTopDown ? vec2(uv.x, 1.0 - uv.y) : uv;
+  // Catmull-Rom when magnifying (exports larger than the source), trilinear mips otherwise.
+  vec4 c = u_bicubic ? clamp(textureBicubic(u_src, suv), 0.0, 1.0) : texture(u_src, suv);
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) c = vec4(0.0);
   fragColor = c;
 }`,

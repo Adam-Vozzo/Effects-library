@@ -90,7 +90,7 @@ export async function runExport(r: Renderer, job: ExportJob, onProgress: (p: Exp
         format,
         crop: job.crop,
         exporting: true,
-        tileSize: 2048,
+        tileSize: 1024,
         onLayer: (i, n) => onProgress({ stage: 'render', progress: (i + 1) / Math.max(1, n), detail: `Rendering layer ${i + 1} of ${n}` }),
       },
       signal,

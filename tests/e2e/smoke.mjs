@@ -11,7 +11,10 @@ import { chromium } from 'playwright';
 
 const PORT = Number(process.env.PORT || 5199);
 const base = `http://localhost:${PORT}`;
-const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--port', String(PORT), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
+const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--port', String(PORT), '--strictPort'], {
+  stdio: ['ignore', 'pipe', 'pipe'],
+  env: { ...process.env, E2E: '1' },
+});
 let failures = 0;
 const fail = (msg) => {
   failures++;
