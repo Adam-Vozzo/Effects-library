@@ -145,7 +145,7 @@ vec3 filmTone(vec3 x) {
 // Per-hue tweaks, luminance-dependent saturation and split toning in OKLab.
 vec3 filmColor(vec3 lab) {
   float C = length(lab.yz);
-  float h = atan(lab.z, lab.y);
+  float h = C > 1e-7 ? atan(lab.z, lab.y) : 0.0; // atan(0, 0) is undefined in GLSL
   vec3 adj = vec3(0.0);
   float wsum = 1e-5;
   for (int i = 0; i < 8; i++) {
@@ -166,15 +166,21 @@ vec3 filmColor(vec3 lab) {
   return vec3(L, ab);
 }
 
+// Out-of-gamut linear RGB is pulled toward its luminance instead of clipping channels (keeps hue).
+vec3 filmGamut(vec3 lin) {
+  float y = dot(lin, vec3(0.2126, 0.7152, 0.0722));
+  float mn = min(lin.r, min(lin.g, lin.b));
+  if (mn < 0.0 && y > 0.0) lin = y + (lin - y) * (y / (y - mn));
+  float mx = max(lin.r, max(lin.g, lin.b));
+  if (mx > 1.0 && y < 1.0) lin = y + (lin - y) * ((1.0 - y) / (mx - y));
+  return clamp(lin, 0.0, 1.0);
+}
+
 vec3 filmGradeLinear(vec3 lin) {
   lin = clamp(u_fMat * (lin * u_fGain), 0.0, 1.0);
   vec3 d = filmTone(linearToSrgb(lin));
   vec3 lab = filmColor(linearToOklab(srgbToLinear(clamp(d, 0.0, 1.0))));
-  return clamp(linearToSrgb(oklabToLinear(lab)), 0.0, 1.0);
-}
-
-vec3 filmGrade(vec3 srgb) {
-  return filmGradeLinear(srgbToLinear(clamp(srgb, 0.0, 1.0)));
+  return linearToSrgb(filmGamut(oklabToLinear(lab)));
 }
 
 // Blend the graded result with the source: lightness by the tone amount, chroma by the color amount.
@@ -183,7 +189,7 @@ vec3 filmAmount(vec3 orig, vec3 graded) {
   vec3 a = linearToOklab(srgbToLinear(clamp(orig, 0.0, 1.0)));
   vec3 b = linearToOklab(srgbToLinear(graded));
   vec3 lab = vec3(mix(a.x, b.x, u_fAmt.y), mix(a.yz, b.yz, u_fAmt.x));
-  return clamp(linearToSrgb(oklabToLinear(lab)), 0.0, 1.0);
+  return linearToSrgb(filmGamut(oklabToLinear(lab)));
 }
 `;
 

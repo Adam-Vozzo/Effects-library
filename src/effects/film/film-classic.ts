@@ -130,7 +130,7 @@ export const CLASSIC_STOCKS: FilmLook[] = [
 ];
 
 export const classicFilm: EffectDef = {
-  id: 'classic-film',
+  id: 'film-classic',
   name: 'Classic Film',
   category: 'Film',
   keywords: 'classic film filter color negative analog kodak portra ektar gold fuji superia pro 400h agfa film LUT color grading',

@@ -24,10 +24,10 @@ export const IR_STOCKS: IrStock[] = [
   {
     name: 'Infrared Classic',
     ir: { weights: [0.4, 0.6, 0], foliage: 1.5, mix: 1 },
-    black: 0.03, white: 1, gamma: 0.88, contrast: 0.35, blackRGB: [0.04, 0, 0],
+    black: 0.03, white: 1, gamma: 0.88, contrast: 0.35, blackRGB: [0.05, 0, 0],
     sat: 1.15, satHighlights: 0.7,
-    hue: { red: [10, 1, 0], orange: [-55, 1.2, 0.02], yellow: [-75, 0.5, 0.02], aqua: [10, 1, 0], blue: [-55, 0.8, -0.03], purple: [-55, 0.85, 0], magenta: [-30, 0.9, 0] },
-    shadows: [200, 0.03], highlights: [215, 0.022],
+    hue: { red: [10, 1, 0], orange: [-55, 1.2, 0.02], yellow: [-75, 0.5, 0.02], aqua: [10, 1, 0], blue: [-45, 0.45, -0.02], purple: [-75, 0.8, 0], magenta: [-45, 0.9, 0] },
+    shadows: [200, 0.02], highlights: [215, 0.022],
   },
   {
     name: 'Infrared Pastel',
@@ -87,7 +87,7 @@ vec3 irStage(vec3 lin) {
 `;
 
 export const infraredFilm: EffectDef = {
-  id: 'infrared-film',
+  id: 'film-infrared',
   name: 'Infrared Film',
   category: 'Film',
   keywords: 'infrared filter aerochrome false color IR red foliage surreal film LUT color grading',

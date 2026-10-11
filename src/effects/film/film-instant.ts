@@ -114,7 +114,7 @@ export const INSTANT_STOCKS: FilmLook[] = [
 ];
 
 export const instantFilm: EffectDef = {
-  id: 'instant-film',
+  id: 'film-instant',
   name: 'Instant Film',
   category: 'Film',
   keywords: 'instant film filter polaroid instax fuji fp-100c expired retro snapshot film LUT color grading',

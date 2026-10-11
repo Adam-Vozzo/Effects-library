@@ -8,7 +8,7 @@ export const BUILTIN_PRESETS: Preset[] = [
     id: 'b-portra-glow',
     name: 'Portra glow',
     layers: [
-      { effectId: 'classic-film', params: { stock: 1 } },
+      { effectId: 'film-classic', params: { stock: 1 } },
       { effectId: 'halation', params: {} },
       { effectId: 'film-grain', params: {} },
     ],

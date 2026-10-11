@@ -24,7 +24,7 @@ export const BW_STOCKS: BwStock[] = [
 ];
 
 export const blackWhite: EffectDef = {
-  id: 'black-white',
+  id: 'film-bw',
   name: 'Black & White',
   category: 'Film',
   keywords: 'black white bw monochrome lut film fuji ilford kodak',

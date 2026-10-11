@@ -76,7 +76,7 @@ export const VINTAGE_STOCKS: FilmLook[] = [
 ];
 
 export const vintageFilm: EffectDef = {
-  id: 'vintage-film',
+  id: 'film-vintage',
   name: 'Vintage Film',
   category: 'Film',
   keywords: 'vintage film filter retro photo old film analog kodachrome technicolor agfacolor color grading',
