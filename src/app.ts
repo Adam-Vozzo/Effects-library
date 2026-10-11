@@ -4,6 +4,7 @@ import './effects';
 import { Renderer } from './engine/renderer';
 import { getEffect, normalizeParams, registrationErrors } from './effects/registry';
 import type { Layer, Project } from './engine/types';
+import type { Texture } from './engine/gl';
 import { Store, type AppState } from './state/store';
 import { AssetStore } from './state/assets';
 import { Library } from './state/presets';
@@ -61,6 +62,8 @@ export class App {
   private fileInput: HTMLInputElement;
   private exporting = false;
   private lastRenderMs = 0;
+  /** Output of the layers below the selected one, reused while editing it. */
+  private chainCache: { key: string; tex: Texture } | null = null;
 
   constructor(mount: HTMLElement) {
     const initial: AppState = {
@@ -145,6 +148,7 @@ export class App {
           project: { layers, crop: saved.project?.crop ?? null, time: saved.project?.time ?? 0 },
           selectedLayerId: saved.selectedLayerId ?? (layers.length ? layers[layers.length - 1].id : null),
         });
+        this.thumbs.crop = this.store.state.project.crop;
         this.store.resetHistory();
         return;
       } catch (e) {
@@ -166,6 +170,7 @@ export class App {
       if (s.mode === 'effect') this.controls.sync();
     }
     if (s.project.crop !== prev.project.crop || s.source !== prev.source || s.mode !== prev.mode) this.updateStageSize();
+    if (s.project.crop !== prev.project.crop) this.cropThumbs();
     if (s.theme !== prev.theme) this.applyTheme();
     if (s.project.layers !== prev.project.layers) {
       this.renderer.pruneLayers(new Set(s.project.layers.map((l) => l.id)));
@@ -261,16 +266,43 @@ export class App {
       void ch;
       const t0 = performance.now();
       try {
-        const out = this.renderer.renderChain(layers, {
+        const opts = {
           width: w,
           height: hh,
           pxScale,
           time: s.project.time,
           format: this.renderer.defaultFormat,
           crop: s.mode === 'crop' ? null : s.project.crop,
+        };
+        // Reuse the render of everything below the selected layer while it is being edited.
+        const sel = layers.findIndex((l) => l.id === s.selectedLayerId);
+        const below = sel > 0 ? layers.slice(0, sel) : [];
+        const key =
+          below.some((l) => l.visible) && !this.exporting
+            ? JSON.stringify([
+                this.renderer.sourceVersion,
+                opts.crop,
+                w,
+                hh,
+                pxScale,
+                below.some((l) => l.visible && getEffect(l.effectId)?.animated) ? s.project.time : 0,
+                below.map((l) => [l.effectId, l.visible, l.opacity, l.blend, l.params]),
+              ])
+            : null;
+        const cache = this.chainCache;
+        const hit = key !== null && cache !== null && cache.key === key;
+        const out = this.renderer.renderChain(layers, {
+          ...opts,
+          start: hit ? { tex: cache!.tex, index: sel } : undefined,
+          capture: !hit && key !== null ? sel : undefined,
+          onCapture: (t) => {
+            if (this.chainCache) this.renderer.pool.release(this.chainCache.tex);
+            this.chainCache = { key: key!, tex: t };
+          },
         });
         this.renderer.present(out);
         this.renderer.pool.release(out);
+        this.renderer.pool.trimOlderThan(8000);
         this.dirty = false;
       } catch (e) {
         console.error(e);
@@ -315,6 +347,7 @@ export class App {
     if (!opts.keepCrop && this.store.state.project.crop) this.store.updateProject((p) => ({ ...p, crop: null }), { history: false });
     this.updateStageSize();
     this.stage.setZoom('fit');
+    this.thumbs.crop = this.store.state.project.crop;
     this.thumbs.invalidate();
     this.requestRender();
   }
@@ -375,6 +408,11 @@ export class App {
     const dlg = progressDialog('Exporting', () => ctrl.abort());
     this.exporting = true;
     this.thumbs.paused = true;
+    if (this.chainCache) {
+      // Free preview memory for the big export targets.
+      this.renderer.pool.release(this.chainCache.tex);
+      this.chainCache = null;
+    }
     const t0 = performance.now();
     try {
       const effects = s.project.layers.filter((l) => l.visible).map((l) => getEffect(l.effectId)!).filter(Boolean);
@@ -434,6 +472,11 @@ export class App {
       toast('That file is not a valid project', 'error');
     }
   }
+
+  private cropThumbs = debounce(() => {
+    this.thumbs.crop = this.store.state.project.crop;
+    this.thumbs.invalidate();
+  }, 500);
 
   private autosave = debounce(() => {
     const s = this.store.state;
@@ -695,6 +738,7 @@ export class App {
       toast('GPU context lost — restoring…', 'error');
     });
     c.addEventListener('webglcontextrestored', () => {
+      this.chainCache = null;
       this.renderer.handleContextRestored();
       this.assets.dropTextures();
       if (this.sourceBitmap) this.renderer.setSource(this.sourceBitmap);

@@ -1,7 +1,7 @@
 // Live effect thumbnails rendered on the current image, one at a time in idle frames.
 
 import type { Renderer } from '../engine/renderer';
-import type { Layer } from '../engine/types';
+import type { Crop, Layer } from '../engine/types';
 import { getEffect } from '../effects/registry';
 
 interface Job {
@@ -24,6 +24,8 @@ export class ThumbnailRenderer {
   paused = false;
   /** Timestamp of the last main preview render; thumbnails wait until interaction settles. */
   busyUntil = 0;
+  /** Current crop so thumbnails match the framed image. */
+  crop: Crop | null = null;
 
   constructor(private renderer: Renderer) {
     this.observer = new IntersectionObserver(
@@ -73,42 +75,49 @@ export class ThumbnailRenderer {
     requestAnimationFrame(() => this.tick());
   }
 
-  private tick(): void {
+  private busy = false;
+
+  private async tick(): Promise<void> {
     this.scheduled = false;
-    if (!this.renderer.hasSource || this.renderer.isContextLost()) return;
+    if (this.busy || !this.renderer.hasSource || this.renderer.isContextLost()) return;
     if (this.paused || performance.now() < this.busyUntil) {
       setTimeout(() => this.schedule(), 150);
       return;
     }
-    const t0 = performance.now();
-    while (this.queue.length && performance.now() - t0 < 12) {
-      const job = this.queue.shift()!;
-      if (!this.visible.has(job.canvas)) continue;
+    const job = this.queue.shift();
+    if (!job) return;
+    if (this.visible.has(job.canvas)) {
       const effects = job.layers.map((l) => getEffect(l.effectId)).filter((e) => !!e);
       if (!this.renderer.ready(effects)) {
         // Programs still compiling in parallel: retry shortly.
         this.queue.push(job);
         this.renderer.pollPrograms();
-        break;
+        setTimeout(() => this.schedule(), 30);
+        return;
       }
+      this.busy = true;
+      const version = this.version;
       try {
-        this.draw(job);
-        this.done.set(job.canvas, job.key + '@' + this.version);
+        await this.draw(job);
       } catch (e) {
         console.warn('Thumbnail failed', job.key, e);
-        this.done.set(job.canvas, job.key + '@' + this.version);
+      } finally {
+        this.busy = false;
       }
+      this.done.set(job.canvas, job.key + '@' + version);
     }
-    if (this.queue.length) setTimeout(() => this.schedule(), 16);
+    if (this.queue.length) this.schedule();
   }
 
-  private draw(job: Job): void {
+  private async draw(job: Job): Promise<void> {
     const r = this.renderer;
-    const [sw, sh] = r.sourceSize;
+    const [fw, fh] = r.sourceSize;
+    const sw = fw * (this.crop?.w ?? 1);
+    const sh = fh * (this.crop?.h ?? 1);
     const s = THUMB_LONG / Math.max(sw, sh);
     const w = Math.max(8, Math.round(sw * s));
     const h = Math.max(8, Math.round(sh * s));
-    const data = r.renderToPixels(job.layers, { width: w, height: h, pxScale: Math.max(w, h) / 1000, time: 0, format: r.defaultFormat, crop: null });
+    const data = await r.renderToPixelsAsync(job.layers, { width: w, height: h, pxScale: Math.max(w, h) / 1000, time: 0, format: r.defaultFormat, crop: this.crop });
     const c = job.canvas;
     c.width = w;
     c.height = h;

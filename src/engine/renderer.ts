@@ -40,6 +40,11 @@ export interface ChainOptions {
   onLayer?: (index: number, total: number) => void | Promise<void>;
   /** Render only the first N layers (for compare/thumbnails). */
   limit?: number;
+  /** Start at layers[index] using `tex` (caller-owned, not released) as its input. */
+  start?: { tex: Texture; index: number };
+  /** Hand a copy of the input of layers[capture] to onCapture (caller owns and releases it). */
+  capture?: number;
+  onCapture?: (t: Texture) => void;
 }
 
 export interface AssetSource {
@@ -55,6 +60,8 @@ export class Renderer {
   private programs = new Map<string, Program>();
   private pending = new Set<Program>();
   private source: Texture | null = null;
+  /** Incremented whenever the source image changes (cache keys). */
+  sourceVersion = 0;
   /** ImageBitmap uploads ignore UNPACK_FLIP_Y, leaving rows top-down; the base pass compensates. */
   private sourceTopDown = false;
   private dummy: Texture;
@@ -125,6 +132,7 @@ export class Renderer {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.generateMipmap(gl.TEXTURE_2D);
     this.source = t;
+    this.sourceVersion++;
   }
 
   // ---------------------------------------------------------------- programs
@@ -263,14 +271,29 @@ export class Renderer {
     const prevTile = this.tileSize;
     this.tileSize = opts.tileSize ?? 0;
     const { width: w, height: h, format } = opts;
-    const active = layers.slice(0, opts.limit ?? layers.length).filter((l) => l.visible && getEffect(l.effectId));
-    const usesOriginal = active.map((l) => !!getEffect(l.effectId)?.usesOriginal);
+    const limit = opts.limit ?? layers.length;
+    const startIndex = opts.start?.index ?? 0;
+    const active: { layer: Layer; index: number }[] = [];
+    layers.forEach((l, index) => {
+      if (index < limit && index >= startIndex && l.visible && getEffect(l.effectId)) active.push({ layer: l, index });
+    });
+    const usesOriginal = active.map((a) => !!getEffect(a.layer.effectId)?.usesOriginal);
     const needsOriginalFrom = (i: number) => usesOriginal.slice(i).some(Boolean);
-    let base: Texture | null = this.renderBase(w, h, opts.crop, format);
-    let current: Texture = base;
+    // `start` hands us a caller-owned texture (cached output of the layers below); never release it.
+    const external = opts.start?.tex ?? null;
+    let base: Texture | null = external ? null : this.renderBase(w, h, opts.crop, format);
+    let current: Texture = external ?? base!;
+    let captured = opts.capture === undefined;
+    const capture = () => {
+      captured = true;
+      const copy = this.pool.acquire(w, h, format);
+      this.draw(this.coreProgram('copy'), copy, w, h, { u_src: current });
+      opts.onCapture?.(copy);
+    };
     try {
       for (let i = 0; i < active.length; i++) {
-        const layer = active[i];
+        const { layer, index } = active[i];
+        if (!captured && index >= opts.capture!) capture();
         const effect = getEffect(layer.effectId)!;
         const out = this.applyEffect(effect, layer.id, layer.params, current, base, opts);
         let result = out;
@@ -285,7 +308,7 @@ export class Renderer {
           this.pool.release(out);
         }
         if (result !== current) {
-          if (current !== base) this.pool.release(current);
+          if (current !== base && current !== external) this.pool.release(current);
           current = result;
         }
         if (base && base !== current && !needsOriginalFrom(i + 1)) {
@@ -295,11 +318,18 @@ export class Renderer {
         const r = opts.onLayer?.(i, active.length);
         yield r ?? undefined;
       }
+      if (!captured) capture();
     } finally {
       this.tileSize = prevTile;
     }
     if (base && base !== current) this.pool.release(base);
-    this.gcCaches(active.map((l) => l.id));
+    this.gcCaches(active.map((a) => a.layer.id));
+    if (current === external) {
+      // Nothing above the cached input changed it: return a copy the caller may release.
+      const copy = this.pool.acquire(w, h, format);
+      this.draw(this.coreProgram('copy'), copy, w, h, { u_src: current });
+      return copy;
+    }
     return current;
   }
 
@@ -596,6 +626,37 @@ export class Renderer {
     const px = this.readRowsRGBA8(q, 0, q.height);
     if (q !== out) this.pool.release(q);
     this.pool.release(out);
+    return px;
+  }
+
+  /**
+   * Render a stack and read it back asynchronously through a pixel-pack buffer + fence,
+   * so the CPU never blocks on the GPU (used for thumbnails). Returns top-down RGBA8.
+   */
+  async renderToPixelsAsync(layers: Layer[], opts: ChainOptions): Promise<Uint8Array> {
+    const gl = this.gl;
+    const out = this.renderChain(layers, opts);
+    const q = out.format === 'rgba8' ? out : this.toRGBA8(out);
+    const w = q.width;
+    const h = q.height;
+    const pbo = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, w * h * 4, gl.STREAM_READ);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, q.fbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    // Commands execute in order, so the targets can be recycled right away.
+    if (q !== out) this.pool.release(q);
+    this.pool.release(out);
+    await this.gpuIdle();
+    const px = new Uint8Array(w * h * 4);
+    if (!gl.isContextLost()) {
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, px);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    }
+    gl.deleteBuffer(pbo);
+    flipRows(px, w * 4, h);
     return px;
   }
 

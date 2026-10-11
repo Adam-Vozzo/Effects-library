@@ -36,6 +36,8 @@ export class Texture {
   fbo: WebGLFramebuffer | null = null;
   /** Pool bookkeeping: true while handed out by a TargetPool. */
   inUse = false;
+  /** Pool bookkeeping: last time (ms) the texture was handed out. */
+  lastUsed = 0;
   readonly levels: number;
   constructor(
     readonly gl: WebGL2RenderingContext,
@@ -182,6 +184,7 @@ export class TargetPool {
       this.all.add(t);
     }
     t.inUse = true;
+    t.lastUsed = performance.now();
     return t;
   }
 
@@ -199,6 +202,12 @@ export class TargetPool {
       this.all.delete(t);
       return false;
     });
+  }
+
+  /** Dispose free textures that have not been used for `ms` milliseconds. */
+  trimOlderThan(ms: number): void {
+    const cutoff = performance.now() - ms;
+    this.trim((t) => t.lastUsed >= cutoff);
   }
 
   get allocatedBytes(): number {

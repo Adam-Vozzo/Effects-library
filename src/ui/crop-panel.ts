@@ -75,7 +75,7 @@ export class CropPanel {
         this.rotation.el,
         flips,
         actions,
-        h('p', { class: 'param__hint' }, 'Drag the frame or its handles on the canvas. Effects are hidden while cropping.'),
+        h('p', { class: 'param__hint crop-panel__hint' }, 'Drag the frame or its handles on the canvas. Effects are hidden while cropping.'),
       ),
     );
     store.subscribe((s, prev) => {

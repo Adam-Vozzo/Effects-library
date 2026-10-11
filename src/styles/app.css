@@ -996,6 +996,10 @@ button:disabled {
   padding-top: 6px;
 }
 
+.crop-panel__hint {
+  padding: 4px 14px;
+}
+
 .crop-panel__row {
   display: flex;
   gap: 8px;
