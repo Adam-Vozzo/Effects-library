@@ -1,7 +1,7 @@
 import type { EffectDef } from '../../engine/types';
 import type { Texture } from '../../engine/gl';
 import { bool, choice, float, int, num, point } from '../helpers';
-import { MATERIAL_COUNT, MATERIAL_GLSL } from './common-a';
+import { DOWN2_GLSL, MATERIAL_COUNT, MATERIAL_GLSL, downTo } from './common-a';
 
 // Bevel & emboss of a shape taken from the image (luma or alpha above a threshold).
 // 1) mask at the processing resolution, 2) jump-flood distance field to the shape's edge (sub-pixel seeds),
@@ -38,6 +38,7 @@ export const bevel: EffectDef = {
     float('outerFill', 'outer fill', 0, 1, 0, 0.01, { group: 'Surface' }),
   ],
   shaders: {
+    down2: DOWN2_GLSL,
     // Shape mask at processing resolution (soft around the threshold for sub-pixel edges).
     mask: /* glsl */ `
 void main() {
@@ -121,31 +122,50 @@ float profile(int k, float t) {
   if (k == 17) return abs(sin(t * PI * 2.5));                                    // Scales
   return 1.0;                                                                    // Flat
 }
+uniform float u_fromBlur; // 1: u_src is a gaussian-blurred mask (no float targets), sigma = u_sigma
+uniform float u_sigma;
 void main() {
   vec4 j = texelFetch(u_src, ivec2(gl_FragCoord.xy), 0);
-  float d = j.x > 9000.0 ? 1e4 : length(j.xy);
-  bool inside = j.z >= 0.5;
-  float sd = inside ? d : -d;
+  float sd;
+  if (u_fromBlur > 0.5) {
+    // Blurred straight edge = normal CDF of the distance: invert it (logistic approximation).
+    float v = clamp(j.r, 1e-3, 1.0 - 1e-3);
+    sd = u_sigma * log(v / (1.0 - v)) / 1.702;
+  } else {
+    float d = j.x > 9000.0 ? 1e4 : length(j.xy);
+    sd = j.z >= 0.5 ? d : -d;
+  }
   float t;
   if (u_direction == 0) t = sd / u_sizeP;
   else if (u_direction == 1) t = (sd + u_sizeP) / u_sizeP;
   else t = (sd + 0.5 * u_sizeP) / u_sizeP;
   float h = (u_direction == 0 && sd < 0.0) ? 0.0 : profile(u_profile, t);
-  fragColor = vec4(h * u_sizeP * u_depth * 0.3, clamp(sd, -2000.0, 2000.0), j.z, 1.0);
+  // Normalized so it also fits 8-bit targets: profile height, signed distance in ±2 bevel sizes.
+  fragColor = vec4(h, saturate(sd / (4.0 * u_sizeP) + 0.5), 0.0, 1.0);
+}`,
+    // Surface normals at processing resolution (xy encoded 0..1) + signed distance passthrough.
+    normal: /* glsl */ `
+uniform sampler2D u_height;
+uniform float u_sizeP;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  ivec2 m = textureSize(u_height, 0) - 1;
+  float k = u_sizeP * u_depth * 0.3; // profile units → processing px of height
+  float gx = (texelFetch(u_height, min(p + ivec2(1, 0), m), 0).r - texelFetch(u_height, max(p - ivec2(1, 0), 0), 0).r) * 0.5 * k;
+  float gy = (texelFetch(u_height, min(p + ivec2(0, 1), m), 0).r - texelFetch(u_height, max(p - ivec2(0, 1), 0), 0).r) * 0.5 * k;
+  vec3 n = normalize(vec3(-gx, -gy, 1.0));
+  fragColor = vec4(n.xy * 0.5 + 0.5, texelFetch(u_height, p, 0).g, 1.0);
 }`,
     main: /* glsl */ `
 ${MATERIAL_GLSL}
-uniform sampler2D u_height;
+uniform sampler2D u_normal;
 uniform float u_sizeP;
 const int BLEND_MAP[${BLEND_MAP.length}] = int[](${BLEND_MAP.join(', ')});
 void main() {
   vec4 src = texture(u_input, v_uv);
-  vec2 hs = vec2(textureSize(u_height, 0));
-  vec2 e = 1.0 / hs;
-  vec4 hc = texture(u_height, v_uv);
-  float gx = (texture(u_height, v_uv + vec2(e.x, 0.0)).r - texture(u_height, v_uv - vec2(e.x, 0.0)).r) * 0.5;
-  float gy = (texture(u_height, v_uv + vec2(0.0, e.y)).r - texture(u_height, v_uv - vec2(0.0, e.y)).r) * 0.5;
-  vec3 n = normalize(vec3(-gx, -gy, 1.0));
+  vec4 nc = texture(u_normal, v_uv);
+  vec2 nxy = nc.xy * 2.0 - 1.0;
+  vec3 n = vec3(nxy, sqrt(max(1.0 - dot(nxy, nxy), 0.0)));
   float az = radians(135.0) + u_lightDirection.x * PI;
   float el = clamp(radians(50.0) + u_lightDirection.y * radians(45.0), radians(3.0), radians(90.0));
   vec3 L = vec3(cos(el) * cos(az), cos(el) * sin(az), sin(el));
@@ -153,7 +173,7 @@ void main() {
   vec3 shaded = shadeMaterial(id, n, L);
 
   // Coverage: the bevel band is always drawn, flat interior / exterior use the fill amounts.
-  float sd = hc.g;
+  float sd = (nc.z - 0.5) * 4.0 * u_sizeP;
   float s = u_sizeP;
   float band, a;
   float aaw = max(1.0, 0.02 * s);
@@ -193,27 +213,42 @@ void main() {
     }
     const wp = Math.max(8, Math.round(W * s));
     const hp = Math.max(8, Math.round(H * s));
-    const f = ctx.format === 'rgba16f' ? ('rgba16f' as const) : ctx.format;
-    const mask = ctx.pass('mask', { width: wp, height: hp, format: f });
-    let cur: Texture = ctx.pass('seed', { width: wp, height: hp, format: f, inputs: { u_mask: mask } });
-    ctx.release(mask);
+    const float = ctx.format === 'rgba16f';
+    const small = downTo(ctx, ctx.input, wp, hp);
+    const mask = ctx.pass('mask', { width: wp, height: hp, inputs: { u_input: small } });
+    if (small !== ctx.input) ctx.release(small);
     const reach = sizeP * (num(p, 'direction') === 2 ? 0.5 : 1) + 2;
-    let step = 1;
-    while (step < reach) step *= 2;
-    const steps: number[] = [];
-    for (let k = step; k >= 1; k = Math.floor(k / 2)) steps.push(k);
-    steps.push(1);
-    for (const k of steps) {
-      const next = ctx.pass('jfa', { width: wp, height: hp, format: f, inputs: { u_src: cur }, uniforms: { u_step: k } });
+    let height: Texture;
+    if (float) {
+      // Exact distance field by jump flooding (offsets need float targets).
+      let cur: Texture = ctx.pass('seed', { width: wp, height: hp, inputs: { u_mask: mask } });
+      ctx.release(mask);
+      let step = 1;
+      while (step < reach) step *= 2;
+      const steps: number[] = [];
+      for (let k = step; k >= 1; k = Math.floor(k / 2)) steps.push(k);
+      steps.push(1);
+      for (const k of steps) {
+        const next = ctx.pass('jfa', { width: wp, height: hp, inputs: { u_src: cur }, uniforms: { u_step: k } });
+        ctx.release(cur);
+        cur = next;
+      }
+      height = ctx.pass('height', { width: wp, height: hp, inputs: { u_src: cur }, uniforms: { u_sizeP: sizeP, u_fromBlur: 0 } });
       ctx.release(cur);
-      cur = next;
+    } else {
+      // 8-bit fallback: approximate the distance from a blurred mask.
+      const sigma = Math.max(1, reach * 0.4);
+      const blurred = ctx.blur(mask, sigma);
+      ctx.release(mask);
+      height = ctx.pass('height', { width: wp, height: hp, inputs: { u_src: blurred }, uniforms: { u_sizeP: sizeP, u_fromBlur: 1, u_sigma: sigma } });
+      ctx.release(blurred);
     }
-    const height = ctx.pass('height', { width: wp, height: hp, format: f, inputs: { u_src: cur }, uniforms: { u_sizeP: sizeP } });
-    ctx.release(cur);
-    const smooth = ctx.blur(height, Math.max(1, sizeP * 0.06), undefined, f);
+    const smooth = ctx.blur(height, Math.max(1, sizeP * 0.06));
     ctx.release(height);
-    const out = ctx.pass('main', { inputs: { u_height: smooth }, uniforms: { u_sizeP: sizeP } });
+    const normal = ctx.pass('normal', { width: wp, height: hp, inputs: { u_height: smooth }, uniforms: { u_sizeP: sizeP } });
     ctx.release(smooth);
+    const out = ctx.pass('main', { inputs: { u_normal: normal }, uniforms: { u_sizeP: sizeP } });
+    ctx.release(normal);
     return out;
   },
 };

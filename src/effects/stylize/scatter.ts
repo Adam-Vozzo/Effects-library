@@ -1,5 +1,6 @@
 import type { EffectDef } from '../../engine/types';
 import { bool, choice, color, float, int, num, point, texture } from '../helpers';
+import { DOWN2_GLSL, downTo } from './common-a';
 
 // Sprites on a rotated, jittered grid. Each fragment gathers the sprites of the neighbouring cells,
 // keeps the two top-most (random stacking order) for anti-aliased compositing and accumulates drop shadows.
@@ -61,8 +62,17 @@ export const scatter: EffectDef = {
       u_maxDiam: maxDiam,
     };
   },
+  render(ctx) {
+    const cols = Math.max(2, num(ctx.params, 'density'));
+    const cells = downTo(ctx, ctx.input, cols * 2, (cols * 2 * ctx.height) / ctx.width);
+    const out = ctx.pass('main', { inputs: { u_cells: cells } });
+    if (cells !== ctx.input) ctx.release(cells);
+    return out;
+  },
   shaders: {
+    down2: DOWN2_GLSL,
     main: /* glsl */ `
+uniform sampler2D u_cells; // input reduced to ~2 texels per cell: per-sprite color / selection samples
 uniform float u_cellPx;
 uniform float u_search;
 uniform float u_maxDiam;
@@ -82,8 +92,13 @@ float sdStar5(vec2 p, float r, float rf) {
   return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
 }
 
+// Explicit mip level for the (mipmapped) sprite texture: it is sampled in divergent loops.
+float spriteLod(float diamPx) {
+  return max(0.0, log2(max(u_spriteTextureSize.x, u_spriteTextureSize.y) / max(diamPx, 1.0)));
+}
+
 // Signed distance (in sprite radii) of local point q to the sprite shape; negative inside.
-float shapeSdf(int shape, vec2 q) {
+float shapeSdf(int shape, vec2 q, float lod) {
   if (shape == 1) { vec2 d = abs(q) - vec2(0.886); return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
   if (shape == 2) return sdStar5(q * vec2(1.0, -1.0) + vec2(0.0, 0.12), 1.08, 0.45);
   if (shape == 3) return max(length(q) - 1.0, -(length(q - vec2(0.42, 0.18)) - 0.86));
@@ -91,7 +106,7 @@ float shapeSdf(int shape, vec2 q) {
     if (!u_spriteTextureLoaded) return length(q) - 1.0;
     vec2 tuv = q * 0.5 + 0.5;
     if (any(lessThan(tuv, vec2(0.0))) || any(greaterThan(tuv, vec2(1.0)))) return 1.0;
-    vec4 t = texture(u_spriteTexture, tuv);
+    vec4 t = textureLod(u_spriteTexture, tuv, lod);
     float a = t.a < 0.999 ? t.a : luma(t.rgb);
     return (0.5 - a) * 0.25;
   }
@@ -122,7 +137,7 @@ Sprite makeSprite(vec2 c) {
   s.src = c + 0.5;
   s.pos = s.src + (h.xy - 0.5) * 1.5 * u_spread;
   vec2 srcPx = gridToPx(s.src);
-  vec3 col = texture(u_input, srcPx / u_resolution).rgb;
+  vec3 col = texture(u_cells, srcPx / u_resolution).rgb;
   float sim = 1.0 - length(col - u_keyColor) / 1.7320508;
   float f = saturate((sim - (1.0 - u_threshold)) / max(u_threshold, 1e-3));
   s.diam = min(${DIAM} * u_size * mix(u_minSize, u_maxSize, f), u_maxDiam) * maskAt(srcPx);
@@ -142,12 +157,12 @@ vec2 spriteLocal(Sprite s, vec2 g) {
 }
 
 vec3 spriteColor(Sprite s, vec2 g) {
-  vec3 base = texture(u_input, gridToPx(s.src) / u_resolution).rgb;
+  vec3 base = texture(u_cells, gridToPx(s.src) / u_resolution).rgb;
   if (u_colorMode == 2) {
     // Texture: the sprite image, or the picture itself rotated with the sprite around its source cell;
     // color variation blends from the plain source color to the full texture detail.
     vec3 t;
-    if (u_spriteTextureLoaded) t = texture(u_spriteTexture, spriteLocal(s, g) * 0.5 + 0.5).rgb;
+    if (u_spriteTextureLoaded) t = textureLod(u_spriteTexture, spriteLocal(s, g) * 0.5 + 0.5, spriteLod(s.diam * u_cellPx)).rgb;
     else t = texture(u_input, gridToPx(s.src + rot2(-s.rot) * (g - s.pos)) / u_resolution).rgb;
     return mix(base, t, u_colorVariation);
   }
@@ -180,7 +195,8 @@ void main() {
       Sprite s = makeSprite(c);
       if (s.diam <= 1e-4) continue;
       float rpx = s.diam * 0.5;
-      float d = shapeSdf(s.shape, spriteLocal(s, g)) * rpx; // grid units
+      float lod = spriteLod(s.diam * u_cellPx);
+      float d = shapeSdf(s.shape, spriteLocal(s, g), lod) * rpx; // grid units
       float cov = saturate(0.5 - d / aa);
       if (cov > 0.0) {
         vec4 e = vec4(s.z, cov, c);
@@ -189,7 +205,7 @@ void main() {
       }
       if (shadows) {
         vec2 gs = g - sdir * u_shadowDistance * s.diam;
-        float ds = shapeSdf(s.shape, spriteLocal(s, gs)) * rpx - u_shadowSpread * rpx;
+        float ds = shapeSdf(s.shape, spriteLocal(s, gs), lod) * rpx - u_shadowSpread * rpx;
         float soft = max(u_shadowBlur * rpx, aa);
         float a = saturate(0.5 - ds / soft);
         if (a > 0.0) {

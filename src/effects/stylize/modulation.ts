@@ -17,6 +17,7 @@ const DIRECTIONS = ['Left to right', 'Top to bottom', 'Right to left', 'Bottom t
 const MAX_ROWS = 4096;
 
 const SCAN_GLSL = /* glsl */ `
+uniform sampler2D u_src;   // input, pre-blurred when a sample/row covers several pixels
 uniform vec2 u_scanSize;   // (samples along the scan, rows across it)
 uniform float u_scanLenPx; // scan length in output pixels
 uniform float u_minPx;     // short side in output pixels
@@ -38,7 +39,7 @@ vec3 sampleSignal(float j, float c) {
   vec3 s = vec3(0.0);
   for (int k = 0; k < 4; k++) {
     float t = (j + (float(k) + 0.5) * 0.25) / u_scanSize.x;
-    s += texture(u_input, scanToUv(t, c)).rgb;
+    s += texture(u_src, scanToUv(t, c)).rgb;
   }
   return saturate(s * 0.25);
 }
@@ -119,14 +120,20 @@ void main() {
     const n = Math.max(16, Math.round(num(p, 'samples')));
     const rows = Math.min(crossPx, MAX_ROWS);
     const uniforms = { u_scanSize: [n, rows] as [number, number], u_scanLenPx: scanLenPx, u_minPx: Math.min(ctx.width, ctx.height) };
-    let sum: Texture = ctx.pass('signal', { width: n, height: rows, uniforms });
+    // Pre-blur so the 4 taps per sample (and 1 per row) see the mean of their footprint at any size.
+    const sScan = (scanLenPx / n) * 0.4;
+    const sCross = (crossPx / rows) * 0.4;
+    const blurred = sScan > 0.6 || sCross > 0.6;
+    const src = blurred ? ctx.blur(ctx.input, horizontal ? sScan : sCross, horizontal ? sCross : sScan) : ctx.input;
+    let sum: Texture = ctx.pass('signal', { width: n, height: rows, inputs: { u_src: src }, uniforms });
     for (let stride = 1; stride < n; stride *= 2) {
       const next = ctx.pass('scan', { width: n, height: rows, inputs: { u_prev: sum }, uniforms: { u_stride: stride } });
       ctx.release(sum);
       sum = next;
     }
-    const out = ctx.pass('main', { inputs: { u_sum: sum }, uniforms });
+    const out = ctx.pass('main', { inputs: { u_sum: sum, u_src: src }, uniforms });
     ctx.release(sum);
+    if (blurred) ctx.release(src);
     return out;
   },
 };

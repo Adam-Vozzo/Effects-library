@@ -200,12 +200,27 @@ uniform sampler2D u_bits;
 void main() {
   vec4 src = texture(u_input, v_uv);
   vec2 size = vec2(textureSize(u_bits, 0));
-  // Sharp-bilinear upscale: crisp bitmap pixels with a one-pixel anti-aliased edge.
-  vec2 f = v_uv * size - 0.5;
-  vec2 i = floor(f);
-  vec2 s = u_resolution / size;
-  vec2 fr = saturate((fract(f) - 0.5) * s + 0.5);
-  float ink = texture(u_bits, (i + fr + 0.5) / size).r;
+  vec2 s = u_resolution / size; // render px per bitmap px
+  float ink;
+  if (min(s.x, s.y) >= 1.0) {
+    // Sharp-bilinear upscale: crisp bitmap pixels with a one-pixel anti-aliased edge.
+    vec2 f = v_uv * size - 0.5;
+    vec2 fr = saturate((fract(f) - 0.5) * s + 0.5);
+    ink = texture(u_bits, (floor(f) + fr + 0.5) / size).r;
+  } else {
+    // Bitmap finer than the render: box-filter the footprint (up to 8×8 bilinear taps).
+    vec2 foot = 1.0 / u_resolution;
+    int n = int(clamp(ceil(0.5 / min(s.x, s.y)), 1.0, 8.0));
+    ink = 0.0;
+    for (int j = 0; j < 8; j++) {
+      if (j >= n) break;
+      for (int i = 0; i < 8; i++) {
+        if (i >= n) break;
+        ink += texture(u_bits, v_uv + ((vec2(i, j) + 0.5) / float(n) - 0.5) * foot).r;
+      }
+    }
+    ink /= float(n * n);
+  }
   vec3 c = mix(u_paper, u_ink, ink);
   fragColor = vec4(mix(src.rgb, c, u_blend), src.a);
 }`,

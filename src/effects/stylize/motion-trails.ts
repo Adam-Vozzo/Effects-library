@@ -31,6 +31,7 @@ export const motionTrails: EffectDef = {
     blendMode('blendMode', 'Blend mode', 6),
   ],
   shaders: {
+    // Highlights in linear light; the knee softens the threshold upwards (threshold → threshold + knee).
     bright: /* glsl */ `
 void main() {
   vec3 c = srgbToLinear(texture(u_input, v_uv).rgb);
@@ -69,8 +70,8 @@ void main() {
     const p = ctx.params;
     const dir = (p.direction as [number, number]) ?? [0, 0.5];
     const a = Math.min(1, Math.max(0, 1 - num(p, 'dimming')));
-    // Per-frame displacement: effect.app's ±4 pad range ↔ our ±1, 0.5 reference px per unit.
-    const stepPx: [number, number] = [dir[0] * 2 * ctx.pxScale, dir[1] * 2 * ctx.pxScale];
+    // Per-frame displacement in reference px: effect.app's pad spans ±4 (= our ±1), ~0.75 px per their unit.
+    const stepPx: [number, number] = [dir[0] * 3 * ctx.pxScale, dir[1] * 3 * ctx.pxScale];
     const stepLen = Math.hypot(stepPx[0], stepPx[1]);
     const diag = Math.hypot(ctx.width, ctx.height);
     // Frames until the trail fades below ~0.5%, and no further than it can travel across the image.

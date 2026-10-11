@@ -94,7 +94,6 @@ void main() {
   float jump = vhsJump();
 
   vec4 geo = texture(u_geo, v_uv);
-  float Ysharp = geo.x;
   float Yb = texture(u_lumaB, v_uv).x;
   float Yw = texture(u_chromaW, v_uv).x;
   // Deck sharpening: unsharp mask against the wide blur (halos).

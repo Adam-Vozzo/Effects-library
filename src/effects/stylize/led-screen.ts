@@ -27,9 +27,11 @@ export const ledScreen: EffectDef = {
 float band(float x, float a, float b, float s) {
   return smoothstep(a - 0.5 * s, a + 0.5 * s, x) - smoothstep(b - 0.5 * s, b + 0.5 * s, x);
 }
-// Same, repeated with period 1 (neighbouring cells' tails).
+// Same, repeated with period 1 (tails of the neighbouring cells, which reach 2 cells at max blur).
 float bandP(float x, float a, float b, float s) {
-  return band(x, a, b, s) + band(x, a - 1.0, b - 1.0, s) + band(x, a + 1.0, b + 1.0, s);
+  float m = 0.0;
+  for (int k = -2; k <= 2; k++) m += band(x, a + float(k), b + float(k), s);
+  return m;
 }
 // Rounded square LED (corner radius r) covering [g, 1 - g], soft edge width s.
 float roundMask(vec2 f, float g, float r, float s) {

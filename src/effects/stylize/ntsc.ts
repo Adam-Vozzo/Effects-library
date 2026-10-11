@@ -79,6 +79,7 @@ uniform sampler2D u_enc;
 uniform sampler2D u_taps;  // per-tap weights: luma, I, Q, smear (each normalized)
 uniform int u_radius;      // taps on each side
 uniform float u_smearMix;
+const vec2 EDGE_TINT = vec2(0.0, 0.2);
 void main() {
   ivec2 ij = ivec2(gl_FragCoord.xy);
   int W = int(u_work.x);
@@ -92,19 +93,30 @@ void main() {
   for (int i = 0; i < 257; i++) {
     if (i > 2 * u_radius) break;
     int x = ij.x - u_radius + i;
-    // Outside the active line the signal sits above white (gives effect.app's bright, fringed edges).
-    float comp = 1.6, yClean = 1.6;
-    vec2 iqClean = vec2(0.0);
+    float comp, yClean;
+    vec2 iqClean, demod;
     if (x >= 0 && x < W) {
       vec4 e = texelFetch(u_enc, ivec2(x, ij.y), 0);
       comp = (e.x - 0.25) * 2.0;
       yClean = (e.y - 0.25) * 2.0;
       iqClean = vec2((e.z - 0.5) / 0.8, (e.w - 0.5) / 0.9);
+      demod = comp * 2.0 * rot;      // demodulate (I with cos, Q with sin)
+    } else {
+      // Outside the active line: super-white luma (bright, ringing picture edges as on effect.app);
+      // the chroma path sees the edge pixel re-modulated (no luma leak from the cut-off window) plus a
+      // faint magenta, so edges look the same whatever the picture width.
+      vec4 e = texelFetch(u_enc, ivec2(clamp(x, 0, W - 1), ij.y), 0);
+      float ye = (e.y - 0.25) * 2.0;
+      vec2 iqe = vec2((e.z - 0.5) / 0.8, (e.w - 0.5) / 0.9);
+      comp = 1.25;
+      yClean = 1.25;
+      iqClean = iqe + EDGE_TINT;
+      demod = 2.0 * (ye + dot(iqe, rot)) * rot + EDGE_TINT;
     }
     vec4 w = texelFetch(u_taps, ivec2(i, 0), 0);
     yd += w.x * comp;
     yc += w.x * yClean;
-    cd += w.yz * comp * 2.0 * rot;   // demodulate (I with cos, Q with sin)
+    cd += w.yz * demod;
     cc += w.yz * iqClean;
     ys += w.w * yClean;
     rot = vec2(rot.x * step1.x - rot.y * step1.y, rot.y * step1.x + rot.x * step1.y);
@@ -121,7 +133,7 @@ void main() {
   vec4 d = texture(u_dec, v_uv);
   float y = (d.x - 0.25) * 2.0;
   vec2 iq = vec2((d.y - 0.5) / 0.8, (d.z - 0.5) / 0.9) * (u_saturation * 0.5);
-  fragColor = vec4(yiq2rgb(vec3(y, iq)), src.a);
+  fragColor = vec4(saturate(yiq2rgb(vec3(y, iq))), src.a);
 }`,
   },
   render(ctx: RenderContext) {

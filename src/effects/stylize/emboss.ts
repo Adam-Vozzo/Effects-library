@@ -1,6 +1,7 @@
 import type { EffectDef } from '../../engine/types';
 import { bool, float, int, num, point } from '../helpers';
 import { MATERIAL_COUNT, MATERIAL_GLSL } from './common-a';
+import type { Texture } from '../../engine/gl';
 
 // Relief from the image's luminance (dark = high): the height gradient tilts a material surface lit from `light direction`
 // (azimuth / elevation offsets from a top-left light; `light animation` spins / bobs it over time), plus a
@@ -30,9 +31,10 @@ export const emboss: EffectDef = {
   shaders: {
     main: /* glsl */ `
 ${MATERIAL_GLSL}
-uniform sampler2D u_soft; // blurred input for the cast shadow
+uniform sampler2D u_relief; // input, prefiltered to the reference scale on large renders
+uniform sampler2D u_soft;   // blurred input for the cast shadow
 // Height: dark = raised (like ink pressed into the surface), which is how effect.app's relief reads.
-float H(vec2 uv) { return 1.0 - luma(texture(u_input, uv).rgb); }
+float H(vec2 uv) { return 1.0 - luma(texture(u_relief, uv).rgb); }
 float Hs(vec2 uv) { return 1.0 - luma(texture(u_soft, uv).rgb); }
 void main() {
   vec4 src = texture(u_input, v_uv);
@@ -73,11 +75,14 @@ void main() {
 }`,
   },
   render(ctx) {
-    const sigma = num(ctx.params, 'shadowBlur') * ctx.pxScale;
-    if (sigma < 0.35) return ctx.pass('main', { inputs: { u_soft: ctx.input } });
-    const soft = ctx.blur(ctx.input, sigma);
-    const out = ctx.pass('main', { inputs: { u_soft: soft } });
-    ctx.release(soft);
+    // Above the reference size, remove detail finer than a reference pixel so the relief keeps its look.
+    const pre = 0.5 * Math.sqrt(Math.max(ctx.pxScale * ctx.pxScale - 1, 0));
+    const relief = pre >= 0.35 ? ctx.blur(ctx.input, pre) : ctx.input;
+    const sigma = Math.hypot(num(ctx.params, 'shadowBlur') * ctx.pxScale, pre);
+    const soft: Texture = sigma >= 0.35 ? ctx.blur(ctx.input, sigma) : ctx.input;
+    const out = ctx.pass('main', { inputs: { u_relief: relief, u_soft: soft } });
+    if (relief !== ctx.input) ctx.release(relief);
+    if (soft !== ctx.input) ctx.release(soft);
     return out;
   },
 };

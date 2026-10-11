@@ -1,6 +1,7 @@
 import type { EffectDef } from '../../engine/types';
 import { textureFromImage, type Texture } from '../../engine/gl';
 import { bool, color, float, int, num } from '../helpers';
+import { DOWN2_GLSL, downTo } from './common-a';
 
 // Image → character grid. `density` = rows of characters over the image height, `tile aspect` = cell
 // width / height. Glyphs are rasterized once into an atlas (OffscreenCanvas 2D) and sorted by ink coverage,
@@ -100,8 +101,10 @@ export const ascii: EffectDef = {
     bool('overlay', 'overlay on image', false),
   ],
   shaders: {
+    down2: DOWN2_GLSL,
     main: /* glsl */ `
 uniform sampler2D u_atlas;
+uniform sampler2D u_small; // input reduced to ~4 texels per cell (cell averages stay exact at any size)
 uniform float u_count;
 uniform float u_atlasRows;
 const float COLS = ${COLS}.0;
@@ -120,7 +123,7 @@ void main() {
   for (int j = 0; j < 4; j++) {
     for (int i = 0; i < 4; i++) {
       vec2 q = (cell + (vec2(i, j) + 0.5) / 4.0) * cellPx;
-      vec3 c = texture(u_input, vec2(q.x, u_resolution.y - q.y) / u_resolution).rgb;
+      vec3 c = texture(u_small, vec2(q.x, u_resolution.y - q.y) / u_resolution).rgb;
       avg += c;
     }
   }
@@ -151,6 +154,12 @@ void main() {
   render(ctx) {
     const set = Math.max(0, Math.min(CHAR_SETS.length - 1, Math.round(num(ctx.params, 'charSet'))));
     const atlas = ctx.cached(`atlas:${set}`, () => buildAtlas(ctx.gl, CHAR_SETS[set]), (a) => a.tex.dispose());
-    return ctx.pass('main', { inputs: { u_atlas: atlas.tex }, uniforms: { u_count: atlas.count, u_atlasRows: atlas.rows } });
+    const rows = Math.max(1, num(ctx.params, 'density'));
+    const cellH = ctx.height / rows;
+    const cellW = cellH * num(ctx.params, 'tileAspect');
+    const small = downTo(ctx, ctx.input, (ctx.width / cellW) * 4, rows * 4);
+    const out = ctx.pass('main', { inputs: { u_atlas: atlas.tex, u_small: small }, uniforms: { u_count: atlas.count, u_atlasRows: atlas.rows } });
+    if (small !== ctx.input) ctx.release(small);
+    return out;
   },
 };
