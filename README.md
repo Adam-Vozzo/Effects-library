@@ -40,7 +40,8 @@ GPU is recommended for 8K–16K exports.
   *your* image). Search with `/`. Star effects to pin them under *Favorites*.
 - **Layers** apply bottom → top. Drag the grip to reorder, eye to hide, double-click to rename,
   right-click for duplicate / move. Every layer also has an opacity + blend mode (24 Photoshop
-  modes) under *Layer* at the bottom of its controls.
+  modes) under *Layer* at the bottom of its controls; hover a mode (or arrow through the list) to
+  preview it on the canvas before picking it.
 - **Controls**: drag sliders (arrow keys nudge, Shift ×10), type exact values, double-click a label to
   reset it, ⤨ randomizes, ↺ resets the whole layer. Undo/redo with Ctrl/⌘ Z / Shift Z.
 - **Crop** (`C`): aspect presets, rotation, flips. **Compare** with the original: hold `\` or the
@@ -50,6 +51,8 @@ GPU is recommended for 8K–16K exports.
 - **Animated effects** (VHS, camera shake, ripple, …) show a timeline; stills export the frame at the
   playhead.
 - Your session (image, layers, crop, texture inputs) autosaves to IndexedDB and restores on reload.
+- Something renders wrong in your browser? *Menu → GPU diagnostics…* tests the shader features the
+  effects rely on and produces a report you can copy.
 
 ### Export
 

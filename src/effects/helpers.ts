@@ -16,7 +16,7 @@ import type {
   PaletteParam,
   TextureParam,
 } from '../engine/types';
-import { BLEND_LABELS, BLEND_MODES } from '../engine/types';
+import { BLEND_GROUPS, BLEND_LABELS, BLEND_MODES } from '../engine/types';
 
 type Extra<T> = Partial<Omit<T, 'type' | 'key' | 'label' | 'default'>>;
 
@@ -76,7 +76,7 @@ export const BLEND_OPTIONS = BLEND_MODES.map((m) => BLEND_LABELS[m]);
 
 /** Blend mode dropdown; the shader receives the index matching blendMode() in the GLSL library. */
 export function blendMode(key = 'blendMode', label = 'Blend mode', def = 0, extra: Extra<EnumParam> = {}): EnumParam {
-  return { type: 'enum', key, label, options: BLEND_OPTIONS, default: def, ui: 'select', ...extra };
+  return { type: 'enum', key, label, options: BLEND_OPTIONS, default: def, ui: 'select', groups: BLEND_GROUPS, livePreview: true, ...extra };
 }
 
 export const num = (p: ParamValues, k: string): number => Number(p[k]);

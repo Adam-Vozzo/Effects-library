@@ -14,6 +14,15 @@ export interface MenuItem {
   heading?: boolean;
   /** Keep the menu open after activation. */
   keepOpen?: boolean;
+  /** Called while the item is hovered or focused, e.g. to preview it live. */
+  preview?: () => void;
+}
+
+export interface MenuOptions {
+  align?: 'start' | 'end' | 'stretch';
+  placement?: 'below' | 'above';
+  /** The pointer left the menu or it closed: drop whatever the items previewed. */
+  onPreviewEnd?: () => void;
 }
 
 let openEl: HTMLElement | null = null;
@@ -23,9 +32,12 @@ export function closeMenus(): void {
   closeOpen?.();
 }
 
-export function openMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuItem[], opts: { align?: 'start' | 'end' | 'stretch'; placement?: 'below' | 'above' } = {}): HTMLElement {
+export function openMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuItem[], opts: MenuOptions = {}): HTMLElement {
   closeMenus();
   const menu = h('div', { class: 'menu', role: 'menu' });
+  // Previews start once the menu has placed its initial focus.
+  let previewing = false;
+  let initial: HTMLElement | null = null;
   for (const it of items) {
     if (it.separator) {
       menu.append(h('div', { class: 'menu__sep' }));
@@ -53,8 +65,21 @@ export function openMenu(anchor: HTMLElement | { x: number; y: number }, items: 
       h('span', { class: 'menu__label' }, it.label ?? ''),
       it.shortcut ? h('span', { class: 'menu__shortcut' }, it.shortcut) : null,
     );
+    if (it.preview && !it.disabled) {
+      const preview = it.preview;
+      row.addEventListener('pointerenter', () => {
+        // Focus follows the pointer so arrow keys continue from the hovered item.
+        if (document.activeElement !== row) row.focus({ preventScroll: true });
+        else preview();
+      });
+      row.addEventListener('focus', () => {
+        if (previewing) preview();
+      });
+    }
+    if (it.checked && !it.disabled && !initial) initial = row;
     menu.append(row);
   }
+  if (opts.onPreviewEnd) menu.addEventListener('pointerleave', opts.onPreviewEnd);
   document.body.append(menu);
   const mr = menu.getBoundingClientRect();
   let x: number;
@@ -78,7 +103,21 @@ export function openMenu(anchor: HTMLElement | { x: number; y: number }, items: 
     if (!menu.contains(e.target as Node) && !(anchor instanceof HTMLElement && anchor.contains(e.target as Node))) closeMenus();
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') closeMenus();
+    if (e.key === 'Escape') {
+      closeMenus();
+      return;
+    }
+    const nav = { ArrowDown: 1, ArrowUp: -1, Home: -Infinity, End: Infinity }[e.key];
+    if (nav === undefined) return;
+    // Arrow keys walk the items (previewing them) instead of reaching the app's shortcuts.
+    e.preventDefault();
+    e.stopPropagation();
+    const rows = [...menu.querySelectorAll<HTMLElement>('.menu__item:not(.is-disabled)')];
+    if (!rows.length) return;
+    const i = rows.indexOf(document.activeElement as HTMLElement);
+    const next = nav === -Infinity ? 0 : nav === Infinity ? rows.length - 1 : i < 0 ? 0 : (i + nav + rows.length) % rows.length;
+    rows[next].focus({ preventScroll: true });
+    rows[next].scrollIntoView({ block: 'nearest' });
   };
   setTimeout(() => {
     document.addEventListener('pointerdown', onDown, true);
@@ -91,8 +130,13 @@ export function openMenu(anchor: HTMLElement | { x: number; y: number }, items: 
     openEl?.remove();
     openEl = null;
     closeOpen = null;
+    opts.onPreviewEnd?.();
   };
-  (menu.querySelector('.menu__item:not(.is-disabled)') as HTMLElement | null)?.focus({ preventScroll: true });
+  // Open on the current choice (if any), scrolled into view.
+  const first = initial ?? (menu.querySelector('.menu__item:not(.is-disabled)') as HTMLElement | null);
+  first?.focus({ preventScroll: true });
+  if (first && first === initial) first.scrollIntoView({ block: 'nearest' });
+  previewing = true;
   return menu;
 }
 

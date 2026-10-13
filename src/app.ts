@@ -2,6 +2,7 @@
 
 import './effects';
 import { Renderer } from './engine/renderer';
+import { runGpuDiagnostics } from './engine/diagnostics';
 import { getEffect, normalizeParams, registrationErrors } from './effects/registry';
 import type { Layer, Project } from './engine/types';
 import type { Texture } from './engine/gl';
@@ -78,6 +79,7 @@ export class App {
       duration: 5,
       theme: this.settings.theme,
       compare: false,
+      preview: null,
     };
     this.store = new Store(initial);
     this.applyTheme();
@@ -162,7 +164,14 @@ export class App {
   // ------------------------------------------------------------------ state reactions
 
   private onState(s: AppState, prev: AppState): void {
-    if (s.project !== prev.project || s.mode !== prev.mode || s.compare !== prev.compare || s.source !== prev.source || s.previewMax !== prev.previewMax) {
+    if (
+      s.project !== prev.project ||
+      s.mode !== prev.mode ||
+      s.compare !== prev.compare ||
+      s.source !== prev.source ||
+      s.previewMax !== prev.previewMax ||
+      s.preview !== prev.preview
+    ) {
       this.requestRender();
     }
     if (s.mode !== prev.mode) {
@@ -250,7 +259,14 @@ export class App {
       if (!s.loop && t >= s.duration) this.store.set({ playing: false });
     }
     if (this.dirty && this.renderer.hasSource && !this.exporting && !this.renderer.isContextLost()) {
-      const layers: Layer[] = s.mode === 'crop' || s.compare ? [] : s.project.layers;
+      const pv = s.preview;
+      // A hovered dropdown option is shown on the selected layer; the layers below stay cached.
+      const layers: Layer[] =
+        s.mode === 'crop' || s.compare
+          ? []
+          : pv
+            ? s.project.layers.map((l) => (l.id === pv.layerId ? { ...l, blend: pv.blend ?? l.blend, params: pv.params ? { ...l.params, ...pv.params } : l.params } : l))
+            : s.project.layers;
       const effects = layers.filter((l) => l.visible).map((l) => getEffect(l.effectId)!).filter(Boolean);
       if (!this.renderer.ready(effects)) {
         this.stage.setBusy(true);
@@ -543,6 +559,7 @@ export class App {
       },
       { separator: true },
       { label: 'Keyboard shortcuts', icon: 'info', action: () => this.showShortcuts() },
+      { label: 'GPU diagnostics…', icon: 'info', action: () => this.showDiagnostics() },
       { label: 'About & credits', icon: 'info', action: () => this.showAbout() },
     ]);
   }
@@ -597,6 +614,31 @@ export class App {
       ['Ctrl/⌘ V', 'Paste image'],
     ];
     modal('Keyboard shortcuts', h('div', { class: 'modal__body shortcuts' }, ...rows.map(([k, d]) => h('div', { class: 'shortcuts__row' }, h('kbd', null, k), h('span', null, d)))));
+  }
+
+  /** Shader feature probes for bug reports (results depend on the browser and GPU driver). */
+  private showDiagnostics(): void {
+    let report: string;
+    try {
+      report = runGpuDiagnostics(this.renderer);
+    } catch (e) {
+      report = 'Diagnostics failed: ' + ((e as Error).stack || String(e));
+    }
+    this.requestRender();
+    const copy = h('button', { class: 'button button--primary', type: 'button' }, 'Copy report');
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(report);
+        toast('Report copied', 'success');
+      } catch {
+        toast('Copy failed: select the text and copy it', 'error');
+      }
+    };
+    modal(
+      'GPU diagnostics',
+      h('div', { class: 'modal__body diagnostics' }, h('pre', { class: 'diagnostics__report' }, report), h('div', { class: 'modal__actions' }, copy)),
+      { wide: true },
+    );
   }
 
   private async showAbout(): Promise<void> {
