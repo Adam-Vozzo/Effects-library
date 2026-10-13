@@ -50,6 +50,8 @@ GPU is recommended for 8K–16K exports.
 - **Animated effects** (VHS, camera shake, ripple, …) show a timeline; stills export the frame at the
   playhead.
 - Your session (image, layers, crop, texture inputs) autosaves to IndexedDB and restores on reload.
+- Something renders wrong in your browser? *Menu → GPU diagnostics…* tests the shader features the
+  effects rely on and produces a report you can copy.
 
 ### Export
 

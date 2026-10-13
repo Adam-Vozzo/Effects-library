@@ -2,6 +2,7 @@
 
 import './effects';
 import { Renderer } from './engine/renderer';
+import { runGpuDiagnostics } from './engine/diagnostics';
 import { getEffect, normalizeParams, registrationErrors } from './effects/registry';
 import type { Layer, Project } from './engine/types';
 import type { Texture } from './engine/gl';
@@ -543,6 +544,7 @@ export class App {
       },
       { separator: true },
       { label: 'Keyboard shortcuts', icon: 'info', action: () => this.showShortcuts() },
+      { label: 'GPU diagnostics…', icon: 'info', action: () => this.showDiagnostics() },
       { label: 'About & credits', icon: 'info', action: () => this.showAbout() },
     ]);
   }
@@ -597,6 +599,31 @@ export class App {
       ['Ctrl/⌘ V', 'Paste image'],
     ];
     modal('Keyboard shortcuts', h('div', { class: 'modal__body shortcuts' }, ...rows.map(([k, d]) => h('div', { class: 'shortcuts__row' }, h('kbd', null, k), h('span', null, d)))));
+  }
+
+  /** Shader feature probes for bug reports (results depend on the browser and GPU driver). */
+  private showDiagnostics(): void {
+    let report: string;
+    try {
+      report = runGpuDiagnostics(this.renderer);
+    } catch (e) {
+      report = 'Diagnostics failed: ' + ((e as Error).stack || String(e));
+    }
+    this.requestRender();
+    const copy = h('button', { class: 'button button--primary', type: 'button' }, 'Copy report');
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(report);
+        toast('Report copied', 'success');
+      } catch {
+        toast('Copy failed: select the text and copy it', 'error');
+      }
+    };
+    modal(
+      'GPU diagnostics',
+      h('div', { class: 'modal__body diagnostics' }, h('pre', { class: 'diagnostics__report' }, report), h('div', { class: 'modal__actions' }, copy)),
+      { wide: true },
+    );
   }
 
   private async showAbout(): Promise<void> {

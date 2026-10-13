@@ -6,6 +6,8 @@ import { choice, color, float, int, num } from '../helpers';
 // sharpened, then every bitmap pixel picks the tone level (paper, a selected 8×8 pattern or solid ink)
 // whose ink coverage best matches the target coverage. Optional contour lines from a Sobel edge pass. The bitmap is shown with crisp
 // (anti-aliased) pixel edges at any render size.
+// Lookups only use texture() at texel centres, with sizes passed as uniforms (no texelFetch, textureSize or
+// integer maths): the texelFetch version rendered nothing but the paper colour in a user's Firefox.
 
 /** The 38 classic QuickDraw / MacPaint fill patterns (8 rows of 8 bits, set bit = ink), light → dark. */
 export const MACPAINT_PATTERNS: number[][] = [
@@ -69,7 +71,7 @@ const bitsOf = (p: number[]) => p.reduce((s, row) => s + ((row & 0xff).toString(
  * with the nearest coverage; levels sharing a coverage split that coverage's interval, so every selected
  * pattern is used.
  */
-function patternAtlas(gl: WebGL2RenderingContext, p: ParamValues): { tex: Texture; lut: Texture } {
+function patternAtlas(gl: WebGL2RenderingContext, p: ParamValues): { tex: Texture; lut: Texture; levels: number } {
   const sel = ((p.patterns as string[] | undefined) ?? [])
     .map((s) => parseInt(s, 10))
     .filter((i, k, a) => i >= 0 && i < MACPAINT_PATTERNS.length && a.indexOf(i) === k)
@@ -102,7 +104,7 @@ function patternAtlas(gl: WebGL2RenderingContext, p: ParamValues): { tex: Textur
     lut[x * 4] = lvl;
     lut[x * 4 + 3] = 255;
   }
-  return { tex: textureFromData(gl, data, 8 * n, 8, { nearest: true }), lut: textureFromData(gl, lut, 256, 1, { nearest: true }) };
+  return { tex: textureFromData(gl, data, 8 * n, 8, { nearest: true }), lut: textureFromData(gl, lut, 256, 1, { nearest: true }), levels: n };
 }
 
 export const macpaint: EffectDef = {
@@ -154,7 +156,7 @@ void main() {
   float w = texture(u_wide, v_uv).r;
   float l = s + u_sharpen * (s - w);
   float t = (l - u_threshold) * u_contrast + 0.5;
-  t += (hash12(gl_FragCoord.xy + 17.0) - 0.5) * u_grain;
+  if (u_grain > 0.0) t += (hash12(gl_FragCoord.xy + 17.0) - 0.5) * u_grain;
   float gx = L(vec2(1, -1)) + 2.0 * L(vec2(1, 0)) + L(vec2(1, 1)) - L(vec2(-1, -1)) - 2.0 * L(vec2(-1, 0)) - L(vec2(-1, 1));
   float gy = L(vec2(-1, 1)) + 2.0 * L(vec2(0, 1)) + L(vec2(1, 1)) - L(vec2(-1, -1)) - 2.0 * L(vec2(0, -1)) - L(vec2(1, -1));
   float e = length(vec2(gx, gy)) * 0.25;
@@ -165,41 +167,40 @@ void main() {
 uniform sampler2D u_tone;
 uniform sampler2D u_pat;
 uniform sampler2D u_lut;
+uniform float u_levels; // tone levels in the atlas, 8 px each
 float levelFor(float coverage) {
-  return floor(texelFetch(u_lut, ivec2(int(saturate(coverage) * 255.0 + 0.5), 0), 0).r * 255.0 + 0.5);
+  float i = floor(saturate(coverage) * 255.0 + 0.5);
+  return floor(texture(u_lut, vec2((i + 0.5) / 256.0, 0.5)).r * 255.0 + 0.5);
 }
+vec2 toneAt(vec2 px) { return texture(u_tone, (px + 0.5) / u_resolution).rg; }
 void main() {
-  ivec2 p = ivec2(gl_FragCoord.xy);
-  vec2 te = texelFetch(u_tone, p, 0).rg;
-  float levels = float(textureSize(u_pat, 0).x / 8);
-  float cover = 1.0 - te.x;
+  vec2 p = floor(gl_FragCoord.xy);
+  float cover = 1.0 - toneAt(p).x;
   float k = levelFor(cover);
   // Edges: dilate the thresholded edge map by the edge width.
   bool edge = false;
   if (u_edgeMode > 0) {
-    float r = u_edgeWidth - 0.5;
-    int ri = int(ceil(r));
+    float r2 = (u_edgeWidth - 0.5) * (u_edgeWidth - 0.5) + 0.01;
     for (int j = -3; j <= 3; j++) {
-      if (abs(j) > ri) continue;
       for (int i = -3; i <= 3; i++) {
-        if (abs(i) > ri) continue;
-        if (float(i * i + j * j) > r * r + 0.01) continue;
-        ivec2 q = clamp(p + ivec2(i, j), ivec2(0), ivec2(u_resolution) - 1);
-        if (texelFetch(u_tone, q, 0).g > u_edgeThreshold) edge = true;
+        vec2 o = vec2(i, j);
+        if (dot(o, o) <= r2 && toneAt(clamp(p + o, vec2(0.0), u_resolution - 1.0)).g > u_edgeThreshold) edge = true;
       }
     }
   }
-  if (edge) k = u_edgeMode == 1 ? levels - 1.0 : levelFor(cover + 0.35);
+  if (edge) k = u_edgeMode == 1 ? u_levels - 1.0 : levelFor(cover + 0.35);
   // Patterns are anchored to the bitmap's top-left corner.
-  ivec2 tp = ivec2(p.x, int(u_resolution.y) - 1 - p.y);
-  float ink = texelFetch(u_pat, ivec2(int(k) * 8 + (tp.x & 7), 7 - (tp.y & 7)), 0).r;
+  vec2 tp = vec2(p.x, u_resolution.y - 1.0 - p.y);
+  vec2 texel = vec2(k * 8.0 + mod(tp.x, 8.0), 7.0 - mod(tp.y, 8.0));
+  float ink = texture(u_pat, (texel + 0.5) / vec2(u_levels * 8.0, 8.0)).r;
   fragColor = vec4(ink, 0.0, 0.0, 1.0);
 }`,
     main: /* glsl */ `
 uniform sampler2D u_bits;
+uniform vec2 u_bitsSize;
 void main() {
   vec4 src = texture(u_input, v_uv);
-  vec2 size = vec2(textureSize(u_bits, 0));
+  vec2 size = u_bitsSize;
   vec2 s = u_resolution / size; // render px per bitmap px
   float ink;
   if (min(s.x, s.y) >= 1.0) {
@@ -240,9 +241,9 @@ void main() {
     const tone = ctx.pass('tone', { width: bw, height: bh, inputs: { u_soft: smooth, u_wide: wide } });
     ctx.release(smooth);
     ctx.release(wide);
-    const bits = ctx.pass('bits', { width: bw, height: bh, inputs: { u_tone: tone, u_pat: atlas.tex, u_lut: atlas.lut } });
+    const bits = ctx.pass('bits', { width: bw, height: bh, inputs: { u_tone: tone, u_pat: atlas.tex, u_lut: atlas.lut }, uniforms: { u_levels: atlas.levels } });
     ctx.release(tone);
-    const out = ctx.pass('main', { inputs: { u_bits: bits } });
+    const out = ctx.pass('main', { inputs: { u_bits: bits }, uniforms: { u_bitsSize: [bw, bh] } });
     ctx.release(bits);
     return out;
   },

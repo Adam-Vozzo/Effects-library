@@ -1926,6 +1926,19 @@ button:disabled {
   gap: 8px;
 }
 
+.diagnostics__report {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font: 12px/1.5 var(--mono);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
 .field {
   display: flex;
   flex-direction: column;
