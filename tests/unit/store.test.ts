@@ -21,6 +21,7 @@ function makeStore(): Store {
     duration: 5,
     theme: 'dark',
     compare: false,
+    preview: null,
   };
   return new Store(s);
 }

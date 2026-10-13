@@ -3,12 +3,14 @@
 import type { BoolParam, ColorParam, EnumParam, FloatParam, ParamValue, RangeParam, TextParam } from '../../engine/types';
 import { clamp, formatNumber, h, onDrag } from '../dom';
 import { icon } from '../icons';
-import { openMenu } from '../menu';
+import { openMenu, type MenuItem } from '../menu';
 
 export interface ControlHost {
   set(v: ParamValue, opts?: { commit?: boolean }): void;
   /** Reset to the default value. */
   reset(): void;
+  /** Show a value on the canvas without applying it; null ends the preview. */
+  preview?(v: ParamValue | null): void;
 }
 
 export interface Control {
@@ -181,12 +183,14 @@ export function selectControl(def: EnumParam, value: number, host: ControlHost):
   const text = h('span', { class: 'dropdown__text' }, def.options[value] ?? '');
   const btn = h('button', { class: 'dropdown', type: 'button' }, text, icon('chevronDown', 16));
   let current = value;
+  const preview = def.livePreview ? host.preview?.bind(host) : undefined;
   btn.addEventListener('click', () => {
-    openMenu(
-      btn,
-      def.options.map((o, i) => ({ label: o, checked: i === current, action: () => host.set(i, { commit: true }) })),
-      { align: 'stretch' },
-    );
+    const items: MenuItem[] = [];
+    def.options.forEach((o, i) => {
+      if (def.groups?.includes(i)) items.push({ separator: true });
+      items.push({ label: o, checked: i === current, action: () => host.set(i, { commit: true }), preview: preview && (() => preview(i)) });
+    });
+    openMenu(btn, items, { align: 'stretch', onPreviewEnd: preview && (() => preview(null)) });
   });
   const el = h('div', { class: 'param param--select' }, header(def.label, host), btn);
   return {

@@ -39,6 +39,14 @@ export interface AppState {
   duration: number;
   theme: 'dark' | 'day';
   compare: boolean;
+  /** Transient look at another value (hovered dropdown option); applied to the preview render only. */
+  preview: LayerPreview | null;
+}
+
+export interface LayerPreview {
+  layerId: string;
+  blend?: BlendMode;
+  params?: ParamValues;
 }
 
 type Listener = (s: AppState, prev: AppState) => void;

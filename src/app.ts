@@ -79,6 +79,7 @@ export class App {
       duration: 5,
       theme: this.settings.theme,
       compare: false,
+      preview: null,
     };
     this.store = new Store(initial);
     this.applyTheme();
@@ -163,7 +164,14 @@ export class App {
   // ------------------------------------------------------------------ state reactions
 
   private onState(s: AppState, prev: AppState): void {
-    if (s.project !== prev.project || s.mode !== prev.mode || s.compare !== prev.compare || s.source !== prev.source || s.previewMax !== prev.previewMax) {
+    if (
+      s.project !== prev.project ||
+      s.mode !== prev.mode ||
+      s.compare !== prev.compare ||
+      s.source !== prev.source ||
+      s.previewMax !== prev.previewMax ||
+      s.preview !== prev.preview
+    ) {
       this.requestRender();
     }
     if (s.mode !== prev.mode) {
@@ -251,7 +259,14 @@ export class App {
       if (!s.loop && t >= s.duration) this.store.set({ playing: false });
     }
     if (this.dirty && this.renderer.hasSource && !this.exporting && !this.renderer.isContextLost()) {
-      const layers: Layer[] = s.mode === 'crop' || s.compare ? [] : s.project.layers;
+      const pv = s.preview;
+      // A hovered dropdown option is shown on the selected layer; the layers below stay cached.
+      const layers: Layer[] =
+        s.mode === 'crop' || s.compare
+          ? []
+          : pv
+            ? s.project.layers.map((l) => (l.id === pv.layerId ? { ...l, blend: pv.blend ?? l.blend, params: pv.params ? { ...l.params, ...pv.params } : l.params } : l))
+            : s.project.layers;
       const effects = layers.filter((l) => l.visible).map((l) => getEffect(l.effectId)!).filter(Boolean);
       if (!this.renderer.ready(effects)) {
         this.stage.setBusy(true);

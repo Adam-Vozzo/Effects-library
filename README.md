@@ -40,7 +40,8 @@ GPU is recommended for 8K–16K exports.
   *your* image). Search with `/`. Star effects to pin them under *Favorites*.
 - **Layers** apply bottom → top. Drag the grip to reorder, eye to hide, double-click to rename,
   right-click for duplicate / move. Every layer also has an opacity + blend mode (24 Photoshop
-  modes) under *Layer* at the bottom of its controls.
+  modes) under *Layer* at the bottom of its controls; hover a mode (or arrow through the list) to
+  preview it on the canvas before picking it.
 - **Controls**: drag sliders (arrow keys nudge, Shift ×10), type exact values, double-click a label to
   reset it, ⤨ randomizes, ↺ resets the whole layer. Undo/redo with Ctrl/⌘ Z / Shift Z.
 - **Crop** (`C`): aspect presets, rotation, flips. **Compare** with the original: hold `\` or the

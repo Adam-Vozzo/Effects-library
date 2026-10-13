@@ -64,6 +64,10 @@ export interface EnumParam extends ParamBase {
   default: number;
   /** slider: discrete slider with the option name as value label (effect.app style). */
   ui?: 'slider' | 'switcher' | 'select';
+  /** select: option indices that start a new group (drawn with a divider). */
+  groups?: number[];
+  /** select: hovering an option previews it on the canvas before it is picked. */
+  livePreview?: boolean;
 }
 
 export interface BoolParam extends ParamBase {
@@ -279,6 +283,8 @@ export const BLEND_MODES = [
   'luminosity',
 ] as const;
 export type BlendMode = (typeof BLEND_MODES)[number];
+/** First mode of each Photoshop group after Normal: darken, lighten, contrast, inversion, component. */
+export const BLEND_GROUPS = [1, 5, 9, 16, 20];
 
 /** Labels in effect.app / Photoshop order; the index is what blendMode() in GLSL expects. */
 export const BLEND_LABELS: Record<BlendMode, string> = {

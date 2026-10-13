@@ -72,6 +72,53 @@ try {
     await page.keyboard.press('Control+z');
     const n2 = await page.evaluate(() => window.__app.store.state.project.layers.length);
     if (n2 !== 1) fail(`undo: expected 1 layer, got ${n2}`);
+
+    // Blend modes preview on hover / arrow keys without touching the project or its history.
+    {
+      const sig = () =>
+        page.evaluate(() => {
+          const t = document.createElement('canvas');
+          t.width = t.height = 16;
+          const x = t.getContext('2d');
+          x.drawImage(document.querySelector('.stage__canvas'), 0, 0, 16, 16);
+          return Array.from(x.getImageData(0, 0, 16, 16).data);
+        });
+      const diff = (a, b) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0);
+      const until = async (pred) => {
+        for (let i = 0; i < 150; i++) {
+          if (await pred()) return true;
+          await page.waitForTimeout(100);
+        }
+        return false;
+      };
+      const state = () =>
+        page.evaluate(() => {
+          const st = window.__app.store;
+          return { blend: st.state.project.layers[0].blend, preview: st.state.preview, history: st.undoStack.length };
+        });
+      const base = await sig();
+      const before = await state();
+      const group = page.locator('.param-group--layer');
+      await group.locator('summary').click();
+      await group.locator('.dropdown').click();
+      await page.locator('.menu .menu__item', { hasText: 'Difference' }).hover();
+      if (!(await until(async () => diff(await sig(), base) > 2000))) fail('blend hover: canvas did not change');
+      let st = await state();
+      if (st.blend !== 'normal' || st.preview?.blend !== 'difference' || st.history !== before.history) fail(`blend hover changed the project: ${JSON.stringify(st)}`);
+      await page.mouse.move(4, 4);
+      if (!(await until(async () => diff(await sig(), base) < 200))) fail('blend hover: leaving the menu did not restore the canvas');
+      // Focus followed the pointer, so the arrow key continues from Difference.
+      await page.keyboard.press('ArrowDown');
+      st = await state();
+      if (st.preview?.blend !== 'exclusion') fail(`blend arrow key: expected an exclusion preview, got ${JSON.stringify(st.preview)}`);
+      await page.locator('.menu .menu__item', { hasText: 'Screen' }).click();
+      st = await state();
+      if (st.blend !== 'screen' || st.preview !== null || st.history !== before.history + 1) fail(`blend pick: ${JSON.stringify(st)}`);
+      await page.keyboard.press('Control+z');
+      st = await state();
+      if (st.blend !== 'normal') fail(`blend undo: expected normal, got ${st.blend}`);
+      console.log('blend preview: hover, arrow keys, pick and undo OK');
+    }
     const dir = mkdtempSync(join(tmpdir(), 'fx-export-'));
     for (const [fmt, label] of [
       ['PNG', 'png'],

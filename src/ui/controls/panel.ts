@@ -1,9 +1,9 @@
 // Right-hand controls panel: parameter editors for the selected layer.
 
 import type { EffectDef, Layer, ParamDef, ParamValue, ParamValues } from '../../engine/types';
-import { BLEND_LABELS, BLEND_MODES } from '../../engine/types';
+import { BLEND_GROUPS, BLEND_LABELS, BLEND_MODES } from '../../engine/types';
 import { cloneValue, defaultParams, getEffect } from '../../effects/registry';
-import type { Store } from '../../state/store';
+import type { LayerPreview, Store } from '../../state/store';
 import type { AssetStore } from '../../state/assets';
 import { clear, h } from '../dom';
 import { icon } from '../icons';
@@ -92,7 +92,17 @@ export class ControlsPanel {
         this.store.setParam(layerId, def.key, cloneValue(def.default as ParamValue), false);
         this.store.commit();
       },
+      preview: (v) => {
+        const cur = this.store.state.project.layers.find((l) => l.id === layerId)?.params[def.key];
+        this.setPreview(v === null || v === cur ? null : { layerId, params: { [def.key]: v } });
+      },
     };
+  }
+
+  /** Transient canvas preview of a hovered option (not part of the project or undo history). */
+  private setPreview(p: LayerPreview | null): void {
+    if (p === null && this.store.state.preview === null) return;
+    this.store.set({ preview: p });
   }
 
   private build(layer: Layer, effect: EffectDef): void {
@@ -130,10 +140,15 @@ export class ControlsPanel {
     const blendHost: ControlHost = {
       set: (v) => this.store.patchLayer(layer.id, { blend: BLEND_MODES[Number(v)] ?? 'normal' }),
       reset: () => this.store.patchLayer(layer.id, { blend: 'normal' }),
+      preview: (v) => {
+        const blend = v === null ? null : (BLEND_MODES[Number(v)] ?? 'normal');
+        const cur = this.store.state.project.layers.find((l) => l.id === layer.id)?.blend;
+        this.setPreview(blend === null || blend === cur ? null : { layerId: layer.id, blend });
+      },
     };
     const opacity = sliderControl({ type: 'float', key: '_opacity', label: 'layer opacity', min: 0, max: 1, step: 0.01, default: 1 }, layer.opacity, opacityHost);
     const blend = selectControl(
-      { type: 'enum', key: '_blend', label: 'layer blend', options: BLEND_MODES.map((m) => BLEND_LABELS[m]), default: 0, ui: 'select' },
+      { type: 'enum', key: '_blend', label: 'layer blend', options: BLEND_MODES.map((m) => BLEND_LABELS[m]), default: 0, ui: 'select', groups: BLEND_GROUPS, livePreview: true },
       Math.max(0, BLEND_MODES.indexOf(layer.blend)),
       blendHost,
     );
